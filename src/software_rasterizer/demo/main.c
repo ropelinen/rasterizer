@@ -32,15 +32,15 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	fps[0] = '\0';
 
 	/* Test tri, CCW */
-	struct vec2_int p1 = { .x = 0, .y = 0 };
-	struct vec2_int p2 = { .x = 30, .y = 60 };
-	struct vec2_int p3 = { .x = -30, .y = 100 };
+	struct vec2_int vert_buf[7] = { { .x = 0, .y = 0 }, { .x = 30, .y = 60 }, { .x = -30, .y = 100 }, { .x = -40, .y = 30 }
+								  , { .x = -100, .y = 0 }, { .x = -70, .y = 60 }, { .x = -130, .y = 100 } };
+	unsigned int ind_buf[9] = { 0, 1, 2, 0, 2, 3, 4, 5, 6 };
 
 	struct vec2_int backbuffer_size = get_backbuffer_size(renderer_info);
 	while (event_loop())
 	{
 		renderer_clear_backbuffer(renderer_info, 0xFF0000);
-		rasterizer_rasterize_triangle(get_backbuffer(renderer_info), &backbuffer_size, &p1, &p2, &p3);
+		rasterizer_rasterize_triangle(get_backbuffer(renderer_info), &backbuffer_size, &vert_buf[0], &ind_buf[0], 9);
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
 		if (font)
