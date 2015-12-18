@@ -33,7 +33,7 @@
     <ClCompile Include="demo\stats.c">
       <Filter>Source Files\demo</Filter>
     </ClCompile>
-    <ClCompile Include="rasterizer.cpp">
+    <ClCompile Include="rasterizer.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
