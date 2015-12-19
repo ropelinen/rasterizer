@@ -5,6 +5,8 @@
 #include "software_rasterizer/demo/stats.h"
 #include "software_rasterizer/rasterizer.h"
 
+#define PI 3.14159265
+
 void render_stats(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size);
 void render_stat_line_ms(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size, 
                          const char *stat_name, const unsigned char stat_id, const int row_y, const int stat_name_x, const int first_val_x, const int x_increment);
@@ -28,19 +30,35 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	struct stats *stats = stats_create(STAT_COUNT, 120);
 
 	uint64_t frame_start = get_time();
-	char fps[10];
-	fps[0] = '\0';
 
 	/* Test tri, CCW */
-	struct vec2_int vert_buf[7] = { { .x = 0, .y = 0 }, { .x = 30, .y = 60 }, { .x = -30, .y = 100 }, { .x = -40, .y = 30 }
-								  , { .x = -100, .y = 0 }, { .x = -70, .y = 60 }, { .x = -130, .y = 100 } };
-	unsigned int ind_buf[9] = { 0, 1, 2, 0, 2, 3, 4, 5, 6 };
+	struct vec3_float vert_buf[4] = { { .x = -25.0f, .y = 25.0f, .z = 0.0f }, { .x = -25.0f, .y = -25.0f, .z = 0.0f }, 
+	                                  { .x = 25.0f, .y = 25.0f, .z = 0.0f }, { .x = 25.0f, .y = -25.0f, .z = 0.0f } };
+	struct vec3_float final_ver_buf[4];
+	unsigned int ind_buf[6] = { 0, 1, 3, 3, 2, 0 };
+	
+	/* Trasfrom related */
+	float rot = 0.0f;
+	struct vec3_float translation = { .x = 100.0f, .y = -200.0f, .z = 0.0f };
+	struct matrix_3x4 trans_mat = mat34_get_translation(&translation);
 
 	struct vec2_int backbuffer_size = get_backbuffer_size(renderer_info);
+	uint32_t frame_time_mus = 0;
+
 	while (event_loop())
 	{
 		renderer_clear_backbuffer(renderer_info, 0xFF0000);
-		rasterizer_rasterize_triangle(get_backbuffer(renderer_info), &backbuffer_size, &vert_buf[0], &ind_buf[0], 9);
+		
+		/* Translate and rotate */
+		float dt = (float)frame_time_mus / 1000000.0f;
+		rot += dt * (float)PI / 16.0f;
+		if (rot > PI * 2.0f) rot -= PI * 2.0f;
+		struct matrix_3x4 rot_mat = mat34_get_rotation_z(rot);
+		struct matrix_3x4 transform = mat34_mul_mat34(&trans_mat, &rot_mat);
+		for (unsigned int i = 0; i < 4; ++i)
+			final_ver_buf[i] = mat34_mul_vec3(&transform, &vert_buf[i]);
+
+		rasterizer_rasterize_triangle(get_backbuffer(renderer_info), &backbuffer_size, &final_ver_buf[0], &ind_buf[0], sizeof(ind_buf)/sizeof(ind_buf[0]));
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
 		if (font)
@@ -49,7 +67,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		finish_drawing(api_info);
 
 		uint64_t frame_end = get_time();
-		stats_update_stat(stats, STAT_FRAME, (uint32_t)get_time_microseconds(frame_end - frame_start));
+		frame_time_mus = (uint32_t)get_time_microseconds(frame_end - frame_start);
+		stats_update_stat(stats, STAT_FRAME, frame_time_mus);
 		stats_update_stat(stats, STAT_BLIT, get_blit_duration_ms(renderer_info));
 		stats_frame_complete(stats);
 		
