@@ -31,6 +31,7 @@
     <ClCompile Include="demo\main.c" />
     <ClCompile Include="demo\osal_win.c" />
     <ClCompile Include="demo\stats.c" />
+    <ClCompile Include="matrix.c" />
     <ClCompile Include="precompiled.c">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
@@ -46,6 +47,7 @@
     <ClInclude Include="demo\font.h" />
     <ClInclude Include="demo\osal.h" />
     <ClInclude Include="demo\stats.h" />
+    <ClInclude Include="matrix.h" />
     <ClInclude Include="precompiled.h" />
     <ClInclude Include="rasterizer.h" />
     <ClInclude Include="util.h" />
