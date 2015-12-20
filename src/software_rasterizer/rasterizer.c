@@ -1,5 +1,4 @@
 #include "software_rasterizer/precompiled.h"
-
 #include "rasterizer.h"
 
 #include "software_rasterizer/vector.h"
@@ -11,7 +10,7 @@ int orient2d(const struct vec2_int *p1, const struct vec2_int *p2, const struct 
 	assert(p2 && "orient2d: p2 is NULL");
 	assert(p3 && "orient2d: p3 is NULL");
 
-	return (p2->x - p1->x)*(p3->y - p1->y) - (p2->y - p1->y)*(p3->x - p1->x);
+	return (p1->y - p2->y) * p3->x + (p2->x - p1->x) * p3->y + ((p1->x * p2->y) - (p1->y * p2->x));
 }
 
 void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_int *target_size, const struct vec3_float *vert_buf, const unsigned int *ind_buf, const unsigned int index_count)
@@ -52,24 +51,46 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		max.x = min(max.x, target_size->x / 2 - 1);
 		max.y = min(max.y, target_size->y / 2 - 1);
 
+		/* Triangle setup */
+		int step_x_12 = p1.y - p2.y;
+		int step_x_23 = p2.y - p3.y;
+		int step_x_31 = p3.y - p1.y;
+
+		int step_y_12 = p2.x - p1.x;
+		int step_y_23 = p3.x - p2.x;
+		int step_y_31 = p1.x - p3.x;
+
+		/* Orient at min point */
+		int w1_row = orient2d(&p1, &p2, &min);
+		int w2_row = orient2d(&p2, &p3, &min);
+		int w3_row = orient2d(&p3, &p1, &min);
+
 		/* Rasterize */
 		struct vec2_int point;
+		/* We would actually want to test at pixel centers instead of pixel corners */
 		for (point.y = min.y; point.y <= max.y; ++point.y)
 		{
+			int w1 = w1_row;
+			int w2 = w2_row;
+			int w3 = w3_row;
+
 			for (point.x = min.x; point.x <= max.x; ++point.x)
 			{
-				/* Calculate barysentric coords */
-				int w0 = orient2d(&p1, &p2, &point);
-				int w1 = orient2d(&p2, &p3, &point);
-				int w2 = orient2d(&p3, &p1, &point);
-
-				if (w0 >= 0 && w1 >= 0 && w2 >= 0)
+				if (w1 >= 0 && w2 >= 0 && w3 >= 0)
 				{
 					/* Render pixel, totally hax btw, should do renderer specifix pixel setting */
 					/* 0,0 at center of the screen, positive to up and right */
 					render_target[target_size->x * (-point.y + half_height) + point.x + half_width] = 0x0000FF;
 				}
+
+				w1 += step_x_12;
+				w2 += step_x_23;
+				w3 += step_x_31;
 			}
+
+			w1_row += step_y_12;
+			w2_row += step_y_23;
+			w3_row += step_y_31;
 		}
 	}
 }
