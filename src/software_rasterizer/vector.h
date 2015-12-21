@@ -13,12 +13,12 @@ struct vec3_float
 
 struct vec2_int
 {
-	int x, y;
+	int32_t x, y;
 };
 
 struct vec3_int
 {
-	int x, y, z;
+	int32_t x, y, z;
 };
 
 #endif /* RPLNN_VECTOR_H */
