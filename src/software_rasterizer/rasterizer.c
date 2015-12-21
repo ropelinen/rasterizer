@@ -6,6 +6,8 @@
 /* 4 sub bits gives us [-1024, 1023] max render target.
  * It should be possible to get something similar out of 8 sub bits. */
 #define SUB_BITS 4
+#define TO_FIXED(val, multip) (int32_t)((val) * (multip) + 0.5f)
+#define MUL_FIXED(val1, val2, multip) (((val1) * (val2)) / (multip))
 
 /* Taken straight from https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/ */
 int32_t orient2d(const struct vec2_int *p1, const struct vec2_int *p2, const struct vec2_int *p3)
@@ -14,10 +16,9 @@ int32_t orient2d(const struct vec2_int *p1, const struct vec2_int *p2, const str
 	assert(p2 && "orient2d: p2 is NULL");
 	assert(p3 && "orient2d: p3 is NULL");
 
-	return (((p1->y - p2->y) * p3->x)) + (((p2->x - p1->x) * p3->y)) + (((p1->x * p2->y)) - ((p1->y * p2->x)));
+	int32_t sub_multip = 1 << SUB_BITS;
+	return MUL_FIXED(p1->y - p2->y, p3->x, sub_multip) + MUL_FIXED(p2->x - p1->x, p3->y, sub_multip) + (MUL_FIXED(p1->x, p2->y, sub_multip) - MUL_FIXED(p1->y, p2->x, sub_multip));
 }
-
-#define TO_FIXED(val, multip) (int32_t)((val) * (multip) + 0.5f)
 
 void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_int *target_size, const struct vec3_float *vert_buf, const unsigned int *ind_buf, const unsigned int index_count)
 {
@@ -65,13 +66,13 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		max.y = (min(max.y, half_height_sub - sub_multip) + sub_mask) & ~sub_mask;
 
 		/* Triangle setup */
-		int32_t step_x_12 = (p1.y - p2.y) * sub_multip;
-		int32_t step_x_23 = (p2.y - p3.y) * sub_multip;
-		int32_t step_x_31 = (p3.y - p1.y) * sub_multip;
+		int32_t step_x_12 = p1.y - p2.y;
+		int32_t step_x_23 = p2.y - p3.y;
+		int32_t step_x_31 = p3.y - p1.y;
 
-		int32_t step_y_12 = (p2.x - p1.x) * sub_multip;
-		int32_t step_y_23 = (p3.x - p2.x) * sub_multip;
-		int32_t step_y_31 = (p1.x - p3.x) * sub_multip;
+		int32_t step_y_12 = p2.x - p1.x;
+		int32_t step_y_23 = p3.x - p2.x;
+		int32_t step_y_31 = p1.x - p3.x;
 
 		/* Orient at min point */
 		int32_t w1_row = orient2d(&p1, &p2, &min);
