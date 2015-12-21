@@ -89,7 +89,7 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 
 			for (point.x = min.x; point.x <= max.x; point.x += sub_multip)
 			{
-				if (w1 >= 0 && w2 >= 0 && w3 >= 0)
+				if ((w1 | w2 | w3) >= 0)
 				{
 					/* Render pixel, totally hax btw, should do renderer specifix pixel setting */
 					/* 0,0 at center of the screen, positive to up and right */
