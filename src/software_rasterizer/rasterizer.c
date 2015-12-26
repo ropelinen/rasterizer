@@ -79,6 +79,12 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		int32_t w2_row = orient2d(&p2, &p3, &min);
 		int32_t w3_row = orient2d(&p3, &p1, &min);
 
+		/* How we calculate this is based on the format of the backbuffer.
+		 * Instead of trying to support what ever the blitter uses should just require some specific format.
+		 * Could for example use tiling or swizzling for optimization https://fgiesen.wordpress.com/2011/01/17/texture-tiling-and-swizzling/ 
+		 * Currently: 0,0 coord at center of the screen, positive to up and right */
+		unsigned int pixel_index_row = target_size->x * (-(min.y / sub_multip) + half_height) + (min.x / sub_multip) + half_width;
+
 		/* Rasterize */
 		struct vec2_int point;
 		/* We would actually want to test at pixel centers instead of pixel corners */
@@ -88,23 +94,27 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 			int32_t w2 = w2_row;
 			int32_t w3 = w3_row;
 
+			unsigned int pixel_index = pixel_index_row;
+
 			for (point.x = min.x; point.x <= max.x; point.x += sub_multip)
 			{
 				if ((w1 | w2 | w3) >= 0)
 				{
-					/* Render pixel, totally hax btw, should do renderer specifix pixel setting */
-					/* 0,0 at center of the screen, positive to up and right */
-					render_target[target_size->x * (-(point.y / sub_multip) + half_height) + (point.x / sub_multip) + half_width] = 0x0000FF;
+					render_target[pixel_index] = 0x0000FF;
 				}
 
 				w1 += step_x_12;
 				w2 += step_x_23;
 				w3 += step_x_31;
+
+				++pixel_index;
 			}
 
 			w1_row += step_y_12;
 			w2_row += step_y_23;
 			w3_row += step_y_31;
+
+			pixel_index_row -= target_size->x;
 		}
 	}
 }
