@@ -27,15 +27,17 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 	assert(vert_buf && "rasterizer_rasterize_triangle: vert_buf is NULL");
 	assert(ind_buf && "rasterizer_rasterize_triangle: ind_buf is NULL");
 	assert(index_count % 3 == 0 && "rasterizer_rasterize_triangle: index count is not valid");
-	assert(SUB_BITS == 4 && "rasterizer_rasterize_triangle: SUB_BITS has changed, fix the assert below.");
+	assert(SUB_BITS == 4 && "rasterizer_rasterize_triangle: SUB_BITS has changed, check the assert below.");
 	assert(target_size->x <= 2048 && target_size->y <= 2048 && "rasterizer_rasterize_triangle: render target is too large");
+
+	/* Sub-pixel constants */
+	const int32_t sub_multip = 1 << SUB_BITS;
+	const int32_t half_pixel = sub_multip >> 1;
+	const int32_t sub_mask = sub_multip - 1;
 
 	/* Bounding box */
 	struct vec2_int min;
 	struct vec2_int max;
-
-	const int32_t sub_multip = 1 << SUB_BITS;
-	const int32_t sub_mask = sub_multip - 1;
 
 	for (unsigned int i = 0; i < index_count; i += 3)
 	{
@@ -49,23 +51,28 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		p3.x = TO_FIXED(vert_buf[ind_buf[i + 2]].x, sub_multip);
 		p3.y = TO_FIXED(vert_buf[ind_buf[i + 2]].y, sub_multip);
 
-		min.x = (min3(p1.x, p2.x, p3.x) + sub_mask) & ~sub_mask;
-		min.y = (min3(p1.y, p2.y, p3.y) + sub_mask) & ~sub_mask;
-		max.x = (max3(p1.x, p2.x, p3.x) + sub_mask) & ~sub_mask;
-		max.y = (max3(p1.y, p2.y, p3.y) + sub_mask) & ~sub_mask;
+		min.x = min3(p1.x, p2.x, p3.x);
+		min.y = min3(p1.y, p2.y, p3.y);
+		max.x = max3(p1.x, p2.x, p3.x);
+		max.y = max3(p1.y, p2.y, p3.y);
 
-		/* Clip to screen */
+		/* Clip to screen and round to pixel centers */
 		int32_t half_width = target_size->x / 2; 
 		int32_t half_height = target_size->y / 2; 
 		int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
 		int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
-		/* Round to integer multiplies */
-		min.x = (max(min.x, -half_width_sub) + sub_mask) & ~sub_mask;
-		min.y = (max(min.y, -half_height_sub) + sub_mask) & ~sub_mask;
-		max.x = (min(max.x, half_width_sub - sub_multip) + sub_mask) & ~sub_mask;
-		max.y = (min(max.y, half_height_sub - sub_multip) + sub_mask) & ~sub_mask;
 
-		/* Triangle setup */
+		min.x = (max(min.x, -half_width_sub) & ~sub_mask) + half_pixel;
+		min.y = (max(min.y, -half_height_sub) & ~sub_mask) + half_pixel;
+		max.x = ((min(max.x, half_width_sub - sub_multip) + sub_mask) & ~sub_mask) + half_pixel;
+		max.y = ((min(max.y, half_height_sub - sub_multip) + sub_mask) & ~sub_mask) + half_pixel;
+
+		/* Orient at min point */
+		int32_t w1_row = orient2d(&p1, &p2, &min);
+		int32_t w2_row = orient2d(&p2, &p3, &min);
+		int32_t w3_row = orient2d(&p3, &p1, &min);
+
+		/* Calculate steps */
 		int32_t step_x_12 = p1.y - p2.y;
 		int32_t step_x_23 = p2.y - p3.y;
 		int32_t step_x_31 = p3.y - p1.y;
@@ -74,20 +81,14 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		int32_t step_y_23 = p3.x - p2.x;
 		int32_t step_y_31 = p1.x - p3.x;
 
-		/* Orient at min point */
-		int32_t w1_row = orient2d(&p1, &p2, &min);
-		int32_t w2_row = orient2d(&p2, &p3, &min);
-		int32_t w3_row = orient2d(&p3, &p1, &min);
-
-		/* How we calculate this is based on the format of the backbuffer.
-		 * Instead of trying to support what ever the blitter uses should just require some specific format.
+		/* How we calculate and step this is based on the format of the backbuffer.
+		 * Instead of trying to support what ever the blitter uses should just require some specific format (goes also for color format).
 		 * Could for example use tiling or swizzling for optimization https://fgiesen.wordpress.com/2011/01/17/texture-tiling-and-swizzling/ 
-		 * Currently: 0,0 coord at center of the screen, positive to up and right */
+		 * Currently render targer format: 0, 0 at top left, increases towards bottom right, 32bit Reserved|Red|Green|Blue */
 		unsigned int pixel_index_row = target_size->x * (-(min.y / sub_multip) + half_height) + (min.x / sub_multip) + half_width;
 
 		/* Rasterize */
 		struct vec2_int point;
-		/* We would actually want to test at pixel centers instead of pixel corners */
 		for (point.y = min.y; point.y <= max.y; point.y += sub_multip)
 		{
 			int32_t w1 = w1_row;
