@@ -35,6 +35,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	struct vec3_float vert_buf[4] = { { .x = -25.0f, .y = 25.0f, .z = 0.0f }, { .x = -25.0f, .y = -25.0f, .z = 0.0f }, 
 	                                  { .x = 25.0f, .y = 25.0f, .z = 0.0f }, { .x = 25.0f, .y = -25.0f, .z = 0.0f } };
 	struct vec3_float final_ver_buf[4];
+	uint32_t vert_colors[4] = { 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF };
 	unsigned int ind_buf[6] = { 0, 1, 3, 3, 2, 0 };
 	
 	/* Trasfrom related */
@@ -58,7 +59,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		for (unsigned int i = 0; i < 4; ++i)
 			final_ver_buf[i] = mat34_mul_vec3(&transform, &vert_buf[i]);
 
-		rasterizer_rasterize_triangle(get_backbuffer(renderer_info), &backbuffer_size, &final_ver_buf[0], &ind_buf[0], sizeof(ind_buf)/sizeof(ind_buf[0]));
+		rasterizer_rasterize_triangle(get_backbuffer(renderer_info), &backbuffer_size, &final_ver_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf)/sizeof(ind_buf[0]));
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
 		if (font)
