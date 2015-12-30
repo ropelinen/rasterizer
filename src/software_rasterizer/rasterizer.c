@@ -20,11 +20,12 @@ int32_t orient2d(const struct vec2_int *p1, const struct vec2_int *p2, const str
 	return MUL_FIXED(p1->y - p2->y, p3->x, sub_multip) + MUL_FIXED(p2->x - p1->x, p3->y, sub_multip) + (MUL_FIXED(p1->x, p2->y, sub_multip) - MUL_FIXED(p1->y, p2->x, sub_multip));
 }
 
-void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_int *target_size, const struct vec3_float *vert_buf, const unsigned int *ind_buf, const unsigned int index_count)
+void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_int *target_size, const struct vec3_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
 {
 	assert(render_target && "rasterizer_rasterize_triangle: render_target is NULL");
 	assert(target_size && "rasterizer_rasterize_triangle: target_size is NULL");
 	assert(vert_buf && "rasterizer_rasterize_triangle: vert_buf is NULL");
+	assert(vert_colors && "rasterizer_rasterize_triangle: vert_colors is NULL");
 	assert(ind_buf && "rasterizer_rasterize_triangle: ind_buf is NULL");
 	assert(index_count % 3 == 0 && "rasterizer_rasterize_triangle: index count is not valid");
 	assert(SUB_BITS == 4 && "rasterizer_rasterize_triangle: SUB_BITS has changed, check the assert below.");
@@ -51,6 +52,10 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		p3.x = TO_FIXED(vert_buf[ind_buf[i + 2]].x, sub_multip);
 		p3.y = TO_FIXED(vert_buf[ind_buf[i + 2]].y, sub_multip);
 
+		uint32_t vc1 = vert_colors[ind_buf[i]];
+		uint32_t vc2 = vert_colors[ind_buf[i + 1]];
+		uint32_t vc3 = vert_colors[ind_buf[i + 2]];
+
 		min.x = min3(p1.x, p2.x, p3.x);
 		min.y = min3(p1.y, p2.y, p3.y);
 		max.x = max3(p1.x, p2.x, p3.x);
@@ -68,9 +73,9 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		max.y = ((min(max.y, half_height_sub - sub_multip) + sub_mask) & ~sub_mask) + half_pixel;
 
 		/* Orient at min point */
-		int32_t w1_row = orient2d(&p1, &p2, &min);
-		int32_t w2_row = orient2d(&p2, &p3, &min);
-		int32_t w3_row = orient2d(&p3, &p1, &min);
+		int32_t w1_row = orient2d(&p2, &p3, &min);
+		int32_t w2_row = orient2d(&p3, &p1, &min);
+		int32_t w3_row = orient2d(&p1, &p2, &min);
 
 		/* Calculate steps */
 		int32_t step_x_12 = p1.y - p2.y;
@@ -80,6 +85,8 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		int32_t step_y_12 = p2.x - p1.x;
 		int32_t step_y_23 = p3.x - p2.x;
 		int32_t step_y_31 = p1.x - p3.x;
+
+		float double_tri_area = (float)orient2d(&p1, &p2, &p3);
 
 		/* How we calculate and step this is based on the format of the backbuffer.
 		 * Instead of trying to support what ever the blitter uses should just require some specific format (goes also for color format).
@@ -101,19 +108,27 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 			{
 				if ((w1 | w2 | w3) >= 0)
 				{
-					render_target[pixel_index] = 0x0000FF;
+					float w1_f = min((float)w1 / double_tri_area, 1.0f);
+					float w2_f = min((float)w2 / double_tri_area, 1.0f);
+					float w3_f = max(1.0f - w1_f - w2_f, 0.0f);
+
+					uint32_t n_r = (uint32_t)(((float)(vc1 & 0xFF0000) * w1_f) + ((float)(vc2 & 0xFF0000) * w2_f) + ((float)(vc3 & 0xFF0000) * w3_f)) & 0xFF0000;
+					uint32_t n_g = (uint32_t)(((float)(vc1 & 0x00FF00) * w1_f) + ((float)(vc2 & 0x00FF00) * w2_f) + ((float)(vc3 & 0x00FF00) * w3_f)) & 0x00FF00;
+					uint32_t n_b = (uint32_t)(((float)(vc1 & 0x0000FF) * w1_f) + ((float)(vc2 & 0x0000FF) * w2_f) + ((float)(vc3 & 0x0000FF) * w3_f)) & 0x0000FF;
+
+					render_target[pixel_index] = n_r | n_g | n_b;
 				}
 
-				w1 += step_x_12;
-				w2 += step_x_23;
-				w3 += step_x_31;
+				w1 += step_x_23;
+				w2 += step_x_31;
+				w3 += step_x_12;
 
 				++pixel_index;
 			}
 
-			w1_row += step_y_12;
-			w2_row += step_y_23;
-			w3_row += step_y_31;
+			w1_row += step_y_23;
+			w2_row += step_y_31;
+			w3_row += step_y_12;
 
 			pixel_index_row -= target_size->x;
 		}
