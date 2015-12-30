@@ -9,15 +9,26 @@
 #define TO_FIXED(val, multip) (int32_t)((val) * (multip) + 0.5f)
 #define MUL_FIXED(val1, val2, multip) (((val1) * (val2)) / (multip))
 
-/* Taken straight from https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/ */
-int32_t orient2d(const struct vec2_int *p1, const struct vec2_int *p2, const struct vec2_int *p3)
+/* Taken straight from https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/ 
+ * Returns the signed A*2 of the triangle formed by the three points. 
+ * The sign is positive with CCW tri in a coordinate system with up-right positive axes. */
+int32_t winding_2d(const struct vec2_int *p1, const struct vec2_int *p2, const struct vec2_int *p3)
 {
-	assert(p1 && "orient2d: p1 is NULL");
-	assert(p2 && "orient2d: p2 is NULL");
-	assert(p3 && "orient2d: p3 is NULL");
+	assert(p1 && "winding_2d: p1 is NULL");
+	assert(p2 && "winding_2d: p2 is NULL");
+	assert(p3 && "winding_2d: p3 is NULL");
 
 	int32_t sub_multip = 1 << SUB_BITS;
 	return MUL_FIXED(p1->y - p2->y, p3->x, sub_multip) + MUL_FIXED(p2->x - p1->x, p3->y, sub_multip) + (MUL_FIXED(p1->x, p2->y, sub_multip) - MUL_FIXED(p1->y, p2->x, sub_multip));
+}
+
+bool is_top_or_left(const struct vec2_int *p1, const struct vec2_int *p2)
+{
+	assert(p1 && "is_top_or_left: p1 is NULL");
+	assert(p2 && "is_top_or_left: p2 is NULL");
+	
+	/* Left || top */
+	return ((p2->y < p1->y) || (p2->x < p1->x && p1->y == p2->y));
 }
 
 void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_int *target_size, const struct vec3_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
@@ -72,10 +83,13 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		max.x = ((min(max.x, half_width_sub - sub_multip) + sub_mask) & ~sub_mask) + half_pixel;
 		max.y = ((min(max.y, half_height_sub - sub_multip) + sub_mask) & ~sub_mask) + half_pixel;
 
-		/* Orient at min point */
-		int32_t w1_row = orient2d(&p2, &p3, &min);
-		int32_t w2_row = orient2d(&p3, &p1, &min);
-		int32_t w3_row = orient2d(&p1, &p2, &min);
+		/* Orient at min point 
+		 * The top or left bias causes the weights to get offset by 1 sub-pixel.
+		 * Could correct for that to get everything depending on the weights just right
+		 * but I think I can live with an error of 1 sub pixel (1/16 pixel currently). */
+		int32_t w1_row = winding_2d(&p2, &p3, &min) + (is_top_or_left(&p2, &p3) ? 0 : -1);
+		int32_t w2_row = winding_2d(&p3, &p1, &min) + (is_top_or_left(&p3, &p1) ? 0 : -1);
+		int32_t w3_row = winding_2d(&p1, &p2, &min) + (is_top_or_left(&p1, &p2) ? 0 : -1);
 
 		/* Calculate steps */
 		int32_t step_x_12 = p1.y - p2.y;
@@ -86,7 +100,7 @@ void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_in
 		int32_t step_y_23 = p3.x - p2.x;
 		int32_t step_y_31 = p1.x - p3.x;
 
-		float double_tri_area = (float)orient2d(&p1, &p2, &p3);
+		float double_tri_area = (float)winding_2d(&p1, &p2, &p3);
 
 		/* How we calculate and step this is based on the format of the backbuffer.
 		 * Instead of trying to support what ever the blitter uses should just require some specific format (goes also for color format).
