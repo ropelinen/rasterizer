@@ -239,7 +239,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 		PAINTSTRUCT ps;
 		HDC hdc = BeginPaint(hwnd, &ps);
 		RECT rect;
-		GetClientRect(hwnd, &rect);
+		GetWindowRect(hwnd, &rect);
 		unsigned int dest_width = (unsigned)(rect.right - rect.left);
 		unsigned int dest_height = (unsigned)(rect.bottom - rect.top);
 		StretchDIBits(
