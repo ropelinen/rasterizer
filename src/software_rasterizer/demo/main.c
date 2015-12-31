@@ -34,7 +34,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	/* Test tri, CCW */
 	struct vec3_float vert_buf[4] = { { .x = -25.0f, .y = 25.0f, .z = 0.0f }, { .x = -25.0f, .y = -25.0f, .z = 0.0f }, 
 	                                  { .x = 25.0f, .y = 25.0f, .z = 0.0f }, { .x = 25.0f, .y = -25.0f, .z = 0.0f } };
-	struct vec3_float final_ver_buf[4];
+	struct vec3_float final_vert_buf[4];
+	struct vec3_float final_vert_buf2[4];
 	uint32_t vert_colors[4] = { 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF };
 	unsigned int ind_buf[6] = { 0, 1, 3, 3, 2, 0 };
 	
@@ -42,6 +43,9 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	float rot = 0.0f;
 	struct vec3_float translation = { .x = 100.0f, .y = -200.0f, .z = 0.0f };
 	struct matrix_3x4 trans_mat = mat34_get_translation(&translation);
+	translation.x += 25.0f;
+	translation.z = 10.0f;
+	struct matrix_3x4 trans_mat2 = mat34_get_translation(&translation);
 
 	struct vec2_int backbuffer_size = get_backbuffer_size(renderer_info);
 	uint32_t frame_time_mus = 0;
@@ -56,10 +60,15 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		if (rot > PI * 2.0f) rot -= PI * 2.0f;
 		struct matrix_3x4 rot_mat = mat34_get_rotation_z(rot);
 		struct matrix_3x4 transform = mat34_mul_mat34(&trans_mat, &rot_mat);
+		struct matrix_3x4 transform2 = mat34_mul_mat34(&trans_mat2, &rot_mat);
 		for (unsigned int i = 0; i < 4; ++i)
-			final_ver_buf[i] = mat34_mul_vec3(&transform, &vert_buf[i]);
+		{
+			final_vert_buf[i] = mat34_mul_vec3(&transform, &vert_buf[i]);
+			final_vert_buf2[i] = mat34_mul_vec3(&transform2, &vert_buf[i]);
+		}
 
-		rasterizer_rasterize_triangle(get_backbuffer(renderer_info), &backbuffer_size, &final_ver_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf)/sizeof(ind_buf[0]));
+		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf)/sizeof(ind_buf[0]));
+		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf2[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
 		if (font)
