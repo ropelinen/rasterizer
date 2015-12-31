@@ -5,6 +5,51 @@
 
 #include <math.h>
 
+float mat32_get_det(const struct matrix_3x4 *mat)
+{
+	assert(mat && "mat34_get_det: mat is NULL");
+
+	const float (*m)[3][4] = &(mat->mat);
+	return ((*m)[0][0] * (*m)[1][1] * (*m)[2][2]) /* * 1) */ /* + ((*m)[0][0] * (*m)[1][2] * (*m)[2][3]  * 0) */ /* + ((*m)[0][0] * (*m)[1][3] * (*m)[2][1] * 0 */
+	     /* + ((*m)[0][1] * (*m)[1][0] * (*m)[2][3]  * 0) */ + ((*m)[0][1] * (*m)[1][2] * (*m)[2][0]) /* * 1) */ /* + ((*m)[0][4] * (*m)[1][3] * (*m)[2][2] * 0 */
+	     + ((*m)[0][2] * (*m)[1][0] * (*m)[2][1]) /* * 1) */ /* + ((*m)[0][2] * (*m)[1][1] * (*m)[2][3]  * 0) */ /* + ((*m)[0][2] * (*m)[1][3] * (*m)[2][0] * 0 */
+	     /* + ((*m)[0][3] * (*m)[1][0] * (*m)[2][2]  * 0) */ /* + ((*m)[0][3] * (*m)[1][1] * (*m)[2][0]  * 0) */ /* + ((*m)[0][3] * (*m)[1][2] * (*m)[2][1] * 0 */
+	     /* - ((*m)[0][0] * (*m)[1][1] * (*m)[2][3]  * 0) */ - ((*m)[0][0] * (*m)[1][2] * (*m)[2][1]) /* * 1) */ /* - ((*m)[0][0] * (*m)[1][3] * (*m)[2][2] * 0 */
+	     - ((*m)[0][1] * (*m)[1][0] * (*m)[2][2]) /* * 1) */ /* - ((*m)[0][0] * (*m)[1][2] * (*m)[2][3]  * 0) */ /* - ((*m)[0][1] * (*m)[1][3] * (*m)[2][0] * 0 */
+	     /* - ((*m)[0][2] * (*m)[1][0] * (*m)[2][3]  * 0) */ - ((*m)[0][2] * (*m)[1][1] * (*m)[2][0]) /* * 1) */ /* - ((*m)[0][2] * (*m)[1][3] * (*m)[2][1] * 0 */
+	     /* - ((*m)[0][3] * (*m)[1][0] * (*m)[2][1]  * 0) */ /* - ((*m)[0][3] * (*m)[1][1] * (*m)[2][2]  * 0) */ /* - ((*m)[0][3] * (*m)[1][2] * (*m)[2][0] * 0 */;
+}
+
+struct matrix_3x4 mat34_get_inverse(const struct matrix_3x4 *mat)
+{
+	assert(mat && "mat34_get_inverse: mat is NULL");
+
+	float det = mat32_get_det(mat);
+	assert(det && "mat34_get_inverse: determinant is 0");
+
+	const float(*m)[3][4] = &(mat->mat);
+	struct matrix_3x4 result;
+	result.mat[0][0] = ((*m)[1][1] * (*m)[2][2]) - ((*m)[1][2] * (*m)[2][1]);
+	result.mat[0][1] = ((*m)[0][2] * (*m)[2][1]) - ((*m)[0][1] * (*m)[2][2]);
+	result.mat[0][2] = ((*m)[0][1] * (*m)[1][2]) - ((*m)[0][2] * (*m)[1][1]);
+	result.mat[0][3] = ((*m)[0][1] * (*m)[1][3] * (*m)[2][2]) + ((*m)[0][2] * (*m)[1][1] * (*m)[2][3]) + ((*m)[0][3] * (*m)[1][2] * (*m)[2][1])
+	                 - ((*m)[0][1] * (*m)[1][2] * (*m)[2][3]) - ((*m)[0][2] * (*m)[2][3] * (*m)[2][1]) - ((*m)[0][3] * (*m)[1][1] * (*m)[2][2]);
+	result.mat[1][0] = ((*m)[1][2] * (*m)[2][0]) - ((*m)[1][0] * (*m)[2][2]);
+	result.mat[1][1] = ((*m)[0][0] * (*m)[2][2]) - ((*m)[0][2] * (*m)[2][0]);
+	result.mat[1][2] = ((*m)[0][2] * (*m)[1][0]) - ((*m)[0][0] * (*m)[1][2]);
+	result.mat[1][3] = ((*m)[0][0] * (*m)[1][2] * (*m)[2][3]) + ((*m)[0][2] * (*m)[1][3] * (*m)[2][0]) + ((*m)[0][3] * (*m)[1][0] * (*m)[2][2])
+	                 - ((*m)[0][0] * (*m)[1][3] * (*m)[2][2]) - ((*m)[0][2] * (*m)[1][0] * (*m)[2][3]) - ((*m)[0][3] * (*m)[1][2] * (*m)[2][0]);
+	result.mat[2][0] = ((*m)[1][0] * (*m)[2][1]) - ((*m)[1][1] * (*m)[2][0]);
+	result.mat[2][1] = ((*m)[0][1] * (*m)[2][0]) - ((*m)[0][0] * (*m)[2][1]);
+	result.mat[2][2] = ((*m)[0][0] * (*m)[1][1]) - ((*m)[0][1] * (*m)[1][0]);
+	result.mat[2][3] = ((*m)[0][0] * (*m)[1][3] * (*m)[2][1]) + ((*m)[0][1] * (*m)[1][0] * (*m)[2][3]) + ((*m)[0][3] * (*m)[1][1] * (*m)[2][0])
+	                 - ((*m)[0][0] * (*m)[1][1] * (*m)[2][3]) - ((*m)[0][1] * (*m)[1][3] * (*m)[2][0]) - ((*m)[0][3] * (*m)[1][0] * (*m)[2][1]);
+
+	result = mat34_mul_scal(&result, 1/det);
+
+	return result;
+}
+
 void mat34_set_to_indentity(struct matrix_3x4 *mat)
 {
 	assert(mat && "mat34_set_to_indentity: mat is NULL");
@@ -55,6 +100,28 @@ struct matrix_3x4 mat34_get_translation(const struct vec3_float *translation)
 	result.mat[0][0] = 1; result.mat[0][1] = 0; result.mat[0][2] = 0; result.mat[0][3] = translation->x;
 	result.mat[1][0] = 0; result.mat[1][1] = 1; result.mat[1][2] = 0; result.mat[1][3] = translation->y;
 	result.mat[2][0] = 0; result.mat[2][1] = 0; result.mat[2][2] = 1; result.mat[2][3] = translation->z;
+
+	return result;
+}
+
+struct matrix_3x4 mat34_mul_scal(const struct matrix_3x4 *mat, float scal)
+{
+	assert(mat && "mat34_mul_scal: mat is NULL");
+
+	struct matrix_3x4 result;
+
+	result.mat[0][0] = mat->mat[0][0] * scal;
+	result.mat[0][1] = mat->mat[0][1] * scal;
+	result.mat[0][2] = mat->mat[0][2] * scal;
+	result.mat[0][3] = mat->mat[0][3] * scal;
+	result.mat[1][0] = mat->mat[1][0] * scal;
+	result.mat[1][1] = mat->mat[1][1] * scal;
+	result.mat[1][2] = mat->mat[1][2] * scal;
+	result.mat[1][3] = mat->mat[1][3] * scal;
+	result.mat[2][0] = mat->mat[2][0] * scal;
+	result.mat[2][1] = mat->mat[2][1] * scal;
+	result.mat[2][2] = mat->mat[2][2] * scal;
+	result.mat[2][3] = mat->mat[2][3] * scal;
 
 	return result;
 }
