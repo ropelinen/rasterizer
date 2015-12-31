@@ -31,16 +31,16 @@ bool is_top_or_left(const struct vec2_int *p1, const struct vec2_int *p2)
 	return ((p2->y < p1->y) || (p2->x < p1->x && p1->y == p2->y));
 }
 
-void rasterizer_rasterize_triangle(uint32_t *render_target, const struct vec2_int *target_size, const struct vec3_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
+void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target_size, const struct vec3_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
 {
-	assert(render_target && "rasterizer_rasterize_triangle: render_target is NULL");
-	assert(target_size && "rasterizer_rasterize_triangle: target_size is NULL");
-	assert(vert_buf && "rasterizer_rasterize_triangle: vert_buf is NULL");
-	assert(vert_colors && "rasterizer_rasterize_triangle: vert_colors is NULL");
-	assert(ind_buf && "rasterizer_rasterize_triangle: ind_buf is NULL");
-	assert(index_count % 3 == 0 && "rasterizer_rasterize_triangle: index count is not valid");
-	assert(SUB_BITS == 4 && "rasterizer_rasterize_triangle: SUB_BITS has changed, check the assert below.");
-	assert(target_size->x <= 2048 && target_size->y <= 2048 && "rasterizer_rasterize_triangle: render target is too large");
+	assert(render_target && "rasterizer_rasterize: render_target is NULL");
+	assert(target_size && "rasterizer_rasterize: target_size is NULL");
+	assert(vert_buf && "rasterizer_rasterize: vert_buf is NULL");
+	assert(vert_colors && "rasterizer_rasterize: vert_colors is NULL");
+	assert(ind_buf && "rasterizer_rasterize: ind_buf is NULL");
+	assert(index_count % 3 == 0 && "rasterizer_rasterize: index count is not valid");
+	assert(SUB_BITS == 4 && "rasterizer_rasterize: SUB_BITS has changed, check the assert below.");
+	assert(target_size->x <= 2048 && target_size->y <= 2048 && "rasterizer_rasterize: render target is too large");
 
 	/* Sub-pixel constants */
 	const int32_t sub_multip = 1 << SUB_BITS;
