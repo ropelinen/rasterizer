@@ -26,7 +26,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define PI 3.14159265
+/* Math defines */
+#define PI 3.14159265f
+#define RAD_TO_DEG(rad) (rad * (180.0f / PI))
+#define DEG_TO_RAD(deg) (deg * (PI / 180.0f))
 
 /* Platform defines 0x2 - 0x20 */
 #define RPLNN_PLATFORM_WINDOWS 0x2
