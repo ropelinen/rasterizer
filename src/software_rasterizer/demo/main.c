@@ -5,8 +5,6 @@
 #include "software_rasterizer/demo/stats.h"
 #include "software_rasterizer/rasterizer.h"
 
-#define PI 3.14159265
-
 void render_stats(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size);
 void render_stat_line_ms(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size, 
                          const char *stat_name, const unsigned char stat_id, const int row_y, const int stat_name_x, const int first_val_x, const int x_increment);

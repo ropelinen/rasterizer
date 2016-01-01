@@ -26,6 +26,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#define PI 3.14159265
+
 /* Platform defines 0x2 - 0x20 */
 #define RPLNN_PLATFORM_WINDOWS 0x2
 
