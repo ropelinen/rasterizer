@@ -63,13 +63,26 @@ void create_window(struct api_info *api_info, HINSTANCE hInstance, struct render
 	if (RegisterClassEx(&wc) == 0)
 		error_popup("Failed to register window class", true);
 
+	RECT client_size;
+	client_size.left = 0; 
+	client_size.top = 0;
+	client_size.right = (LONG)renderer_info->width;
+	client_size.bottom = (LONG)renderer_info->height;
+
+	DWORD style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+	DWORD exStyle = 0;
+	if (!AdjustWindowRectEx(&client_size, style, false, exStyle))
+		error_popup("Failed to get correct window size", true);
+
+		
+
 	api_info->hwnd = CreateWindowEx(
-		0,
+		exStyle,
 		class_name,
 		window_name,
-		WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+		style,
 		120, 120,
-		(int)renderer_info->width, (int)renderer_info->height,
+		client_size.right - client_size.left, client_size.bottom - client_size.top,
 		NULL,
 		NULL,
 		hInstance,
@@ -239,7 +252,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 		PAINTSTRUCT ps;
 		HDC hdc = BeginPaint(hwnd, &ps);
 		RECT rect;
-		GetWindowRect(hwnd, &rect);
+		GetClientRect(hwnd, &rect);
 		unsigned int dest_width = (unsigned)(rect.right - rect.left);
 		unsigned int dest_height = (unsigned)(rect.bottom - rect.top);
 		StretchDIBits(
