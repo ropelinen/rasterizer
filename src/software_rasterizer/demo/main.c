@@ -30,12 +30,20 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	uint64_t frame_start = get_time();
 
 	/* Test tri, CCW */
-	struct vec3_float vert_buf[4] = { { .x = -2.0f, .y = 2.0f, .z = 0.0 }, { .x = -2.0f, .y = -2.0f, .z = 0.0f },
-	                                  { .x = 2.0f, .y = 2.0f, .z = 0.0f }, { .x = 2.0f, .y = -2.0f, .z = 0.0f } };
-	struct vec4_float final_vert_buf[4];
-	struct vec4_float final_vert_buf2[4];
-	uint32_t vert_colors[4] = { 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF };
-	unsigned int ind_buf[6] = { 0, 1, 3, 3, 2, 0 };
+	struct vec3_float vert_buf[8] = { { .x = -2.0f, .y = 2.0f, .z = -2.0f }, { .x = -2.0f, .y = -2.0f, .z = -2.0f },
+	                                  { .x = 2.0f, .y = 2.0f, .z = -2.0f }, { .x = 2.0f, .y = -2.0f, .z = -2.0f },
+									  { .x = -2.0f, .y = 2.0f, .z = 2.0f }, { .x = -2.0f, .y = -2.0f, .z = 2.0f },
+									  { .x = 2.0f, .y = 2.0f, .z = 2.0f }, { .x = 2.0f, .y = -2.0f, .z = 2.0f } };
+	struct vec4_float final_vert_buf[8];
+	struct vec4_float final_vert_buf2[8];
+	uint32_t vert_colors[8] = { 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF
+	                          , 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF };
+	unsigned int ind_buf[36] = { 0, 1, 3, 3, 2, 0 /* front */
+	                           , 0, 2, 4, 4, 2, 6 /* top */ 
+	                           , 1, 5, 3, 3, 5, 7 /* bottom */
+	                           , 0, 4, 5, 5, 1, 0 /* left */
+	                           , 2, 3, 7, 7, 6, 2 /* right */
+	                           , 6, 7, 5, 5, 4, 6 }; /* back */
 	
 	/* Transfrom related */
 	float rot = 0.0f;
@@ -67,28 +75,18 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		struct matrix_4x4 camera_projection = mat44_mul_mat34(&perspective_mat, &camera_mat);
 
 		/* World space */
-		struct matrix_3x4 rot_mat = mat34_get_rotation_z(rot);
+		//struct matrix_3x4 rot_mat = mat34_get_rotation_z(rot);
+		struct matrix_3x4 rot_mat = mat34_get_rotation_y(rot);
 		struct matrix_3x4 world_transform = mat34_mul_mat34(&trans_mat, &rot_mat);
 		struct matrix_3x4 world_transform2 = mat34_mul_mat34(&trans_mat2, &rot_mat);
 
 		struct matrix_4x4 final_transform = mat44_mul_mat34(&camera_projection, &world_transform);
 		struct matrix_4x4 final_transform2 = mat44_mul_mat34(&camera_projection, &world_transform2);
 
-		for (unsigned int i = 0; i < 4; ++i)
+		for (unsigned int i = 0; i < sizeof(vert_buf) / sizeof(vert_buf[0]); ++i)
 		{
 			final_vert_buf[i] = mat44_mul_vec3(&final_transform, &vert_buf[i]);
 			final_vert_buf2[i] = mat44_mul_vec3(&final_transform2, &vert_buf[i]);
-
-			/* These should be done in the rasterizer */
-			/* Clip before this */
-			final_vert_buf[i].x /= final_vert_buf[i].w; final_vert_buf[i].y /= final_vert_buf[i].w; final_vert_buf[i].z /= final_vert_buf[i].w;
-			final_vert_buf2[i].x /= final_vert_buf2[i].w; final_vert_buf2[i].y /= final_vert_buf2[i].w; final_vert_buf2[i].z /= final_vert_buf2[i].w;
-
-			final_vert_buf[i].x *= backbuffer_size.x / 2;
-			final_vert_buf[i].y *= backbuffer_size.y / 2;
-
-			final_vert_buf2[i].x *= backbuffer_size.x / 2;
-			final_vert_buf2[i].y *= backbuffer_size.y / 2;
 		}
 
 
