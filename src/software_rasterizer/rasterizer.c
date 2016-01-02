@@ -31,7 +31,7 @@ bool is_top_or_left(const struct vec2_int *p1, const struct vec2_int *p2)
 	return ((p2->y < p1->y) || (p2->x < p1->x && p1->y == p2->y));
 }
 
-void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target_size, const struct vec3_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
+void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target_size, const struct vec4_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
 {
 	assert(render_target && "rasterizer_rasterize: render_target is NULL");
 	assert(target_size && "rasterizer_rasterize: target_size is NULL");
