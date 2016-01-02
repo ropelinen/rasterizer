@@ -30,43 +30,71 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	uint64_t frame_start = get_time();
 
 	/* Test tri, CCW */
-	struct vec3_float vert_buf[4] = { { .x = -25.0f, .y = 25.0f, .z = 0.0f }, { .x = -25.0f, .y = -25.0f, .z = 0.0f }, 
-	                                  { .x = 25.0f, .y = 25.0f, .z = 0.0f }, { .x = 25.0f, .y = -25.0f, .z = 0.0f } };
-	struct vec3_float final_vert_buf[4];
-	struct vec3_float final_vert_buf2[4];
+	struct vec3_float vert_buf[4] = { { .x = -2.0f, .y = 2.0f, .z = 0.0 }, { .x = -2.0f, .y = -2.0f, .z = 0.0f },
+	                                  { .x = 2.0f, .y = 2.0f, .z = 0.0f }, { .x = 2.0f, .y = -2.0f, .z = 0.0f } };
+	struct vec4_float final_vert_buf[4];
+	struct vec4_float final_vert_buf2[4];
 	uint32_t vert_colors[4] = { 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF };
 	unsigned int ind_buf[6] = { 0, 1, 3, 3, 2, 0 };
 	
-	/* Trasfrom related */
+	/* Transfrom related */
 	float rot = 0.0f;
-	struct vec3_float translation = { .x = 100.0f, .y = -200.0f, .z = 0.0f };
+	struct vec3_float translation = { .x = 2.0f, .y = -4.0f, .z = 10.0f };
+	struct vec3_float camera_trans = { .x = 2.0f,.y = -4.0f,.z = 0.0f };
 	struct matrix_3x4 trans_mat = mat34_get_translation(&translation);
-	translation.x += 25.0f;
-	translation.z = 10.0f;
+	translation.x += 2.0f;
+	translation.z += 3.0f;
 	struct matrix_3x4 trans_mat2 = mat34_get_translation(&translation);
 
 	struct vec2_int backbuffer_size = get_backbuffer_size(renderer_info);
+	struct matrix_4x4 perspective_mat = mat44_get_perspective_lh_fov(DEG_TO_RAD(59.0f), (float)backbuffer_size.x / (float)backbuffer_size.y, 1.0f, 1000.0f);
+
 	uint32_t frame_time_mus = 0;
 
 	while (event_loop())
 	{
 		renderer_clear_backbuffer(renderer_info, 0xFF0000);
-		
-		/* Translate and rotate */
+
 		float dt = (float)frame_time_mus / 1000000.0f;
+		
+		/* Update test rotation */
 		rot += dt * (float)PI / 16.0f;
 		if (rot > PI * 2.0f) rot -= PI * 2.0f;
+
+		/* Projection and view*/
+		struct matrix_3x4 camera_mat = mat34_get_translation(&camera_trans);
+		camera_mat = mat34_get_inverse(&camera_mat);
+		struct matrix_4x4 camera_projection = mat44_mul_mat34(&perspective_mat, &camera_mat);
+
+		/* World space */
 		struct matrix_3x4 rot_mat = mat34_get_rotation_z(rot);
-		struct matrix_3x4 transform = mat34_mul_mat34(&trans_mat, &rot_mat);
-		struct matrix_3x4 transform2 = mat34_mul_mat34(&trans_mat2, &rot_mat);
+		struct matrix_3x4 world_transform = mat34_mul_mat34(&trans_mat, &rot_mat);
+		struct matrix_3x4 world_transform2 = mat34_mul_mat34(&trans_mat2, &rot_mat);
+
+		struct matrix_4x4 final_transform = mat44_mul_mat34(&camera_projection, &world_transform);
+		struct matrix_4x4 final_transform2 = mat44_mul_mat34(&camera_projection, &world_transform2);
+
 		for (unsigned int i = 0; i < 4; ++i)
 		{
-			final_vert_buf[i] = mat34_mul_vec3(&transform, &vert_buf[i]);
-			final_vert_buf2[i] = mat34_mul_vec3(&transform2, &vert_buf[i]);
+			final_vert_buf[i] = mat44_mul_vec3(&final_transform, &vert_buf[i]);
+			final_vert_buf2[i] = mat44_mul_vec3(&final_transform2, &vert_buf[i]);
+
+			/* These should be done in the rasterizer */
+			/* Clip before this */
+			final_vert_buf[i].x /= final_vert_buf[i].w; final_vert_buf[i].y /= final_vert_buf[i].w; final_vert_buf[i].z /= final_vert_buf[i].w;
+			final_vert_buf2[i].x /= final_vert_buf2[i].w; final_vert_buf2[i].y /= final_vert_buf2[i].w; final_vert_buf2[i].z /= final_vert_buf2[i].w;
+
+			final_vert_buf[i].x *= backbuffer_size.x / 2;
+			final_vert_buf[i].y *= backbuffer_size.y / 2;
+
+			final_vert_buf2[i].x *= backbuffer_size.x / 2;
+			final_vert_buf2[i].y *= backbuffer_size.y / 2;
 		}
 
-		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf)/sizeof(ind_buf[0]));
+
+		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
 		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf2[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
+
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
 		if (font)
@@ -79,7 +107,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		stats_update_stat(stats, STAT_FRAME, frame_time_mus);
 		stats_update_stat(stats, STAT_BLIT, get_blit_duration_ms(renderer_info));
 		stats_frame_complete(stats);
-		
+
 		frame_start = frame_end;
 	}
 
