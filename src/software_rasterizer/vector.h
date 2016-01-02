@@ -11,6 +11,11 @@ struct vec3_float
 	float x, y, z;
 };
 
+struct vec4_float
+{
+	float x, y, z, w;
+};
+
 struct vec2_int
 {
 	int32_t x, y;
