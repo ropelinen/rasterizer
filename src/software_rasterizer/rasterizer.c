@@ -53,15 +53,20 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 
 	for (unsigned int i = 0; i < index_count; i += 3)
 	{
+		/* Clip near and far planes here */
+
+		int32_t half_width = target_size->x / 2;
+		int32_t half_height = target_size->y / 2; 
+
 		struct vec2_int p1;
-		p1.x = TO_FIXED(vert_buf[ind_buf[i]].x, sub_multip);
-		p1.y = TO_FIXED(vert_buf[ind_buf[i]].y, sub_multip);
+		p1.x = TO_FIXED(vert_buf[ind_buf[i]].x / vert_buf[ind_buf[i]].w * half_width, sub_multip);
+		p1.y = TO_FIXED(vert_buf[ind_buf[i]].y / vert_buf[ind_buf[i]].w * half_height, sub_multip);
 		struct vec2_int p2;
-		p2.x = TO_FIXED(vert_buf[ind_buf[i + 1]].x, sub_multip);
-		p2.y = TO_FIXED(vert_buf[ind_buf[i + 1]].y, sub_multip);
+		p2.x = TO_FIXED(vert_buf[ind_buf[i + 1]].x / vert_buf[ind_buf[i + 1]].w * half_width, sub_multip);
+		p2.y = TO_FIXED(vert_buf[ind_buf[i + 1]].y / vert_buf[ind_buf[i + 1]].w * half_height, sub_multip);
 		struct vec2_int p3;
-		p3.x = TO_FIXED(vert_buf[ind_buf[i + 2]].x, sub_multip);
-		p3.y = TO_FIXED(vert_buf[ind_buf[i + 2]].y, sub_multip);
+		p3.x = TO_FIXED(vert_buf[ind_buf[i + 2]].x / vert_buf[ind_buf[i + 2]].w * half_width, sub_multip);
+		p3.y = TO_FIXED(vert_buf[ind_buf[i + 2]].y / vert_buf[ind_buf[i + 2]].w * half_height, sub_multip);
 
 		uint32_t vc1 = vert_colors[ind_buf[i]];
 		uint32_t vc2 = vert_colors[ind_buf[i + 1]];
@@ -73,8 +78,6 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 		max.y = max3(p1.y, p2.y, p3.y);
 
 		/* Clip to screen and round to pixel centers */
-		int32_t half_width = target_size->x / 2; 
-		int32_t half_height = target_size->y / 2; 
 		int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
 		int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
 
