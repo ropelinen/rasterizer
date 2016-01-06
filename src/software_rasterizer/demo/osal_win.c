@@ -26,9 +26,12 @@ struct renderer_info
 #endif
 };
 
+#define MAX_KEYCODE 0xFF
+#define KEY_STATE_TYPE_BITS 32
 struct api_info
 {
 	HWND hwnd;
+	uint32_t key_states[(MAX_KEYCODE + KEY_STATE_TYPE_BITS - 1) / KEY_STATE_TYPE_BITS];
 	struct renderer_info *renderer_info;
 };
 
@@ -227,6 +230,48 @@ bool float_to_string(const float value, char *buffer, const size_t buffer_size)
 	return snprintf(buffer, buffer_size, "%.3f", value) < (int)buffer_size;
 }
 
+static const uint8_t keycode_table[KEY_COUNT] = 
+{ 
+	0x41, /* A */
+	0x42, /* B */
+	0x43, /* C */
+	0x44, /* D */
+	0x45, /* E */
+	0x46, /* F */
+	0x47, /* G */
+	0x48, /* H */
+	0x49, /* I */
+	0x4A, /* J */
+	0x4B, /* K */
+	0x4C, /* L */
+	0x4D, /* M */
+	0x4E, /* N */
+	0x4F, /* O */
+	0x50, /* P */
+	0x51, /* Q */
+	0x52, /* R */
+	0x53, /* S */
+	0x54, /* T */
+	0x55, /* U */
+	0x56, /* V */
+	0x57, /* W */
+	0x58, /* X */
+	0x59, /* Y */
+	0x5A  /* Z */
+};
+
+uint8_t get_virtual_key_code(enum keycodes keycode)
+{
+	assert(keycode < sizeof(keycode_table) / sizeof(keycode_table[0]) && "get_virtual_key_code: invalid keycode");
+	return keycode_table[keycode];
+}
+
+bool is_key_down(struct api_info *api_info, enum keycodes keycode)
+{
+	uint8_t vkc = get_virtual_key_code(keycode);
+	return (api_info->key_states[vkc / KEY_STATE_TYPE_BITS] & (1 << (vkc % KEY_STATE_TYPE_BITS))) != 0;
+}
+
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	/* This works because GWLP_USERDATA defaults to 0 */
@@ -237,6 +282,16 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 	{
 	case WM_CLOSE:
 		PostQuitMessage(0);
+		return 0;
+	case WM_KEYDOWN:
+		assert(wParam <= MAX_KEYCODE && "WindowProc: Unexpected keycode");
+		if (api_info && wParam <= MAX_KEYCODE)
+			api_info->key_states[wParam / KEY_STATE_TYPE_BITS] |= (1 << (wParam % KEY_STATE_TYPE_BITS));
+		return 0;
+	case WM_KEYUP:
+		assert(wParam <= MAX_KEYCODE && "WindowProc: Unexpected keycode");
+		if (api_info && wParam <= MAX_KEYCODE)
+			api_info->key_states[wParam / KEY_STATE_TYPE_BITS] &= ~(1 << (wParam % KEY_STATE_TYPE_BITS));
 		return 0;
 	case WM_PAINT:
 #if RPLNN_RENDERER == RPLNN_RENDERER_GDI
@@ -280,6 +335,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	struct api_info api_info;
 	api_info.hwnd = NULL;
+	memset(api_info.key_states, 0, sizeof(api_info.key_states));
 	api_info.renderer_info = &renderer_info;
 
 	renderer_initialize(&renderer_info, 1280, 720);

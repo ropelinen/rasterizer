@@ -3,7 +3,6 @@
 
 /* A simple OS Abtraction Layer */
 
-/* TODO: Rename api_info */
 struct api_info;
 struct renderer_info;
 
@@ -27,6 +26,39 @@ uint64_t get_time_microseconds(const uint64_t time);
 
 bool uint64_to_string(const uint64_t value, char *buffer, const size_t buffer_size);
 bool float_to_string(const float value, char *buffer, const size_t buffer_size);
+
+bool is_key_down(struct api_info *api_info, enum keycodes keycode);
+
+enum keycodes
+{
+	KEY_A = 0,
+	KEY_B,
+	KEY_C,
+	KEY_D,
+	KEY_E,
+	KEY_F,
+	KEY_G,
+	KEY_H,
+	KEY_I,
+	KEY_J,
+	KEY_K,
+	KEY_L,
+	KEY_M,
+	KEY_N,
+	KEY_O,
+	KEY_P,
+	KEY_Q,
+	KEY_R,
+	KEY_S,
+	KEY_T,
+	KEY_U,
+	KEY_V,
+	KEY_W,
+	KEY_X,
+	KEY_Y,
+	KEY_Z,
+	KEY_COUNT
+};
 
 
 #endif /* RPLNN_OSAL_H */
