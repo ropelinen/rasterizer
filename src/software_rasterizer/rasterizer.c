@@ -47,13 +47,14 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 	const int32_t half_pixel = sub_multip >> 1;
 	const int32_t sub_mask = sub_multip - 1;
 
-	/* Bounding box */
-	struct vec2_int min;
-	struct vec2_int max;
-
 	for (unsigned int i = 0; i < index_count; i += 3)
 	{
-		/* Clip near and far planes here */
+		/* Skip the tri if any of its vertices is outside the near/far planes.
+		 * A bit hacky but good enough for the time being. */
+		if (vert_buf[ind_buf[i]].z < 0.0f || vert_buf[ind_buf[i]].z > vert_buf[ind_buf[i]].w ||
+			vert_buf[ind_buf[i + 1]].z < 0.0f || vert_buf[ind_buf[i + 1]].z > vert_buf[ind_buf[i + 1]].w ||
+			vert_buf[ind_buf[i + 2]].z < 0.0f || vert_buf[ind_buf[i + 2]].z > vert_buf[ind_buf[i + 2]].w)
+			continue;
 
 		int32_t half_width = target_size->x / 2;
 		int32_t half_height = target_size->y / 2; 
@@ -72,6 +73,9 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 		uint32_t vc2 = vert_colors[ind_buf[i + 1]];
 		uint32_t vc3 = vert_colors[ind_buf[i + 2]];
 
+		/* Bounding box */
+		struct vec2_int min;
+		struct vec2_int max;
 		min.x = min3(p1.x, p2.x, p3.x);
 		min.y = min3(p1.y, p2.y, p3.y);
 		max.x = max3(p1.x, p2.x, p3.x);
