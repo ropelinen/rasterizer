@@ -5,6 +5,8 @@
 #include "software_rasterizer/demo/stats.h"
 #include "software_rasterizer/rasterizer.h"
 
+void handle_input(struct api_info *api_info, float dt, struct vec3_float *camera_trans);
+
 void render_stats(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size);
 void render_stat_line_ms(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size, 
                          const char *stat_name, const unsigned char stat_id, const int row_y, const int stat_name_x, const int first_val_x, const int x_increment);
@@ -65,6 +67,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 		float dt = (float)frame_time_mus / 1000000.0f;
 		
+		handle_input(api_info, dt, &camera_trans);
+
 		/* Update test rotation */
 		rot += dt * (float)PI / 16.0f;
 		if (rot > PI * 2.0f) rot -= PI * 2.0f;
@@ -89,7 +93,6 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 			final_vert_buf2[i] = mat44_mul_vec3(&final_transform2, &vert_buf[i]);
 		}
 
-
 		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
 		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf2[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
 
@@ -112,6 +115,24 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	stats_destroy(&stats);
 	if (font)
 		font_destroy(&font);
+}
+
+void handle_input(struct api_info *api_info, float dt, struct vec3_float *camera_trans)
+{
+	assert(api_info && "handle_input: api_info is NULL");
+	assert(camera_trans && "handle_input: camera_trans is NULL");
+
+	const float camera_speed = 10.0f;
+
+	if (is_key_down(api_info, KEY_D))
+		camera_trans->x += camera_speed * dt;
+	else if (is_key_down(api_info, KEY_A))
+		camera_trans->x -= camera_speed * dt;
+
+	if (is_key_down(api_info, KEY_W))
+		camera_trans->z += camera_speed * dt;
+	else if (is_key_down(api_info, KEY_S))
+		camera_trans->z -= camera_speed * dt;
 }
 
 void render_stats(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size)
