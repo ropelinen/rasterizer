@@ -29,6 +29,7 @@ struct renderer_info
 struct api_info
 {
 	HWND hwnd;
+	struct renderer_info *renderer_info;
 };
 
 LPCWSTR class_name = TEXT("TestClass");
@@ -90,6 +91,9 @@ void create_window(struct api_info *api_info, HINSTANCE hInstance, struct render
 
 	if (api_info->hwnd == NULL)
 		error_popup("Failed to create a window", true);
+
+	/* If I need to access api_info in WindowProc's WM_CREATE handling move this there. */
+	SetWindowLongPtr(api_info->hwnd, GWLP_USERDATA, (LONG_PTR)api_info);
 }
 
 void renderer_initialize(struct renderer_info *info, unsigned int width, unsigned int height)
@@ -225,21 +229,9 @@ bool float_to_string(const float value, char *buffer, const size_t buffer_size)
 
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	struct renderer_info *renderer_info;
-	if (msg == WM_CREATE)
-	{
-		/* Get mystery create parameter here and save it to WindowLongPtr */
-		CREATESTRUCT *cs = (CREATESTRUCT*)lParam;
-		renderer_info = (struct renderer_info*)cs->lpCreateParams;
-
-		/* I think this could be set during the initialization. */
-		SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)renderer_info);
-	}
-	else
-	{
-		/* Get stuff from long ptr here */
-		renderer_info = (struct renderer_info*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
-	}
+	/* This works because GWLP_USERDATA defaults to 0 */
+	struct api_info *api_info = (struct api_info*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+	struct renderer_info *renderer_info = api_info ? api_info->renderer_info : NULL;
 
 	switch (msg)
 	{
@@ -248,24 +240,28 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 		return 0;
 	case WM_PAINT:
 #if RPLNN_RENDERER == RPLNN_RENDERER_GDI
-		uint64_t blit_start = get_time();
-		PAINTSTRUCT ps;
-		HDC hdc = BeginPaint(hwnd, &ps);
-		RECT rect;
-		GetClientRect(hwnd, &rect);
-		unsigned int dest_width = (unsigned)(rect.right - rect.left);
-		unsigned int dest_height = (unsigned)(rect.bottom - rect.top);
-		StretchDIBits(
-			hdc,
-			0, 0, dest_width, dest_height,
-			0, 0, renderer_info->width, renderer_info->height,
-			renderer_info->buffer,
-			&(renderer_info->bitmapinfo),
-			DIB_RGB_COLORS,
-			SRCCOPY);
+		assert(renderer_info && "WindowProc: renderer_info is NULL");
+		if (renderer_info)
+		{
+			uint64_t blit_start = get_time();
+			PAINTSTRUCT ps;
+			HDC hdc = BeginPaint(hwnd, &ps);
+			RECT rect;
+			GetClientRect(hwnd, &rect);
+			unsigned int dest_width = (unsigned)(rect.right - rect.left);
+			unsigned int dest_height = (unsigned)(rect.bottom - rect.top);
+			StretchDIBits(
+				hdc,
+				0, 0, dest_width, dest_height,
+				0, 0, renderer_info->width, renderer_info->height,
+				renderer_info->buffer,
+				&(renderer_info->bitmapinfo),
+				DIB_RGB_COLORS,
+				SRCCOPY);
 
-		EndPaint(hwnd, &ps);
-		renderer_info->blit_duration_mus = (uint32_t)get_time_microseconds(get_time() - blit_start);
+			EndPaint(hwnd, &ps);
+			renderer_info->blit_duration_mus = (uint32_t)get_time_microseconds(get_time() - blit_start);
+		}
 #endif
 		return 0;
 	}
@@ -277,11 +273,14 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 #pragma warning(disable : 4100) /* unreferenced formal parameter */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-	struct api_info api_info = { .hwnd = NULL };
 	struct renderer_info renderer_info;
 #if RPLNN_RENDERER == RPLNN_RENDERER_GDI
 	renderer_info.buffer = NULL;
 #endif
+
+	struct api_info api_info;
+	api_info.hwnd = NULL;
+	api_info.renderer_info = &renderer_info;
 
 	renderer_initialize(&renderer_info, 1280, 720);
 	create_window(&api_info, hInstance, &renderer_info);
