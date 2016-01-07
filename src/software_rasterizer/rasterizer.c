@@ -57,7 +57,7 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 			continue;
 
 		int32_t half_width = target_size->x / 2;
-		int32_t half_height = target_size->y / 2; 
+		int32_t half_height = target_size->y / 2;
 
 		struct vec2_int p1;
 		p1.x = TO_FIXED(vert_buf[ind_buf[i]].x / vert_buf[ind_buf[i]].w * half_width, sub_multip);
@@ -113,7 +113,9 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 		 * Instead of trying to support what ever the blitter uses should just require some specific format (goes also for color format).
 		 * Could for example use tiling or swizzling for optimization https://fgiesen.wordpress.com/2011/01/17/texture-tiling-and-swizzling/ 
 		 * Currently render targer format: 0, 0 at top left, increases towards bottom right, 32bit Reserved|Red|Green|Blue */
-		unsigned int pixel_index_row = target_size->x * (-(min.y / sub_multip) + half_height) + (min.x / sub_multip) + half_width;
+		unsigned int pixel_index_row = target_size->x 
+			* ((target_size->y - 1) - (((min.y - half_pixel) / sub_multip) + half_height)) /* y */
+			+ (((min.x - half_pixel) / sub_multip) + half_width); /* x */
 
 		/* Rasterize */
 		struct vec2_int point;
@@ -137,6 +139,7 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 					uint32_t n_g = (uint32_t)(((float)(vc1 & 0x00FF00) * w1_f) + ((float)(vc2 & 0x00FF00) * w2_f) + ((float)(vc3 & 0x00FF00) * w3_f)) & 0x00FF00;
 					uint32_t n_b = (uint32_t)(((float)(vc1 & 0x0000FF) * w1_f) + ((float)(vc2 & 0x0000FF) * w2_f) + ((float)(vc3 & 0x0000FF) * w3_f)) & 0x0000FF;
 
+					assert(pixel_index < (unsigned)(target_size->x * target_size->y) && "rasterizer_rasterize: invalid pixel_index");
 					render_target[pixel_index] = n_r | n_g | n_b;
 				}
 
