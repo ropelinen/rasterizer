@@ -31,6 +31,30 @@ bool is_top_or_left(const struct vec2_int *p1, const struct vec2_int *p2)
 	return ((p2->y < p1->y) || (p2->x < p1->x && p1->y == p2->y));
 }
 
+#define OC_INSIDE 0 // 0000
+#define OC_LEFT 1   // 0001
+#define OC_RIGHT 2  // 0010
+#define OC_BOTTOM 4 // 0100
+#define OC_TOP 8    // 1000
+
+uint32_t compute_out_code(struct vec2_int *p, const int32_t minx, const int32_t miny, const int32_t maxx, const int32_t maxy)
+{
+	assert(p && "compute_out_code: p is NULL");
+
+	uint32_t code = OC_INSIDE; 
+
+	if (p->x < minx)           // to the left of clip window
+		code |= OC_LEFT;
+	else if (p->x > maxx)      // to the right of clip window
+		code |= OC_RIGHT;
+	if (p->y < miny)           // below the clip window
+		code |= OC_BOTTOM;
+	else if (p->y > maxy)      // above the clip window
+		code |= OC_TOP;
+
+	return code;
+}
+
 void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target_size, const struct vec4_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
 {
 	assert(render_target && "rasterizer_rasterize: render_target is NULL");
@@ -58,6 +82,8 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 
 		int32_t half_width = target_size->x / 2;
 		int32_t half_height = target_size->y / 2;
+		int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
+		int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
 
 		struct vec2_int p1;
 		p1.x = TO_FIXED(vert_buf[ind_buf[i]].x / vert_buf[ind_buf[i]].w * half_width, sub_multip);
@@ -68,6 +94,48 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 		struct vec2_int p3;
 		p3.x = TO_FIXED(vert_buf[ind_buf[i + 2]].x / vert_buf[ind_buf[i + 2]].w * half_width, sub_multip);
 		p3.y = TO_FIXED(vert_buf[ind_buf[i + 2]].y / vert_buf[ind_buf[i + 2]].w * half_height, sub_multip);
+
+		/* Test view port x, y clipping */
+		uint32_t oc1 = compute_out_code(&p1, -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
+		uint32_t oc2 = compute_out_code(&p2, -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
+		uint32_t oc3 = compute_out_code(&p3, -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
+		if ((oc1 | oc2 | oc3) == 0) 
+		{ 
+			/* Whole poly inside the view, trivially accept */
+		}
+		else if (oc1 & oc2 & oc3) 
+		{
+			/* All points in the same outside region, trivially reject */
+			continue;
+		}
+		else
+		{
+			/* Test guard band clipping */
+			const int32_t minx = TO_FIXED(-1024, sub_multip);
+			const int32_t miny = TO_FIXED(-1024, sub_multip);
+			const int32_t maxx = TO_FIXED(1023, sub_multip);
+			const int32_t maxy = TO_FIXED(1023, sub_multip);
+
+			oc1 = compute_out_code(&p1, minx, miny, maxx, maxy);
+			oc2 = compute_out_code(&p2, minx, miny, maxx, maxy);
+			oc3 = compute_out_code(&p3, minx, miny, maxx, maxy);
+
+			if ((oc1 | oc2 | oc3) == 0)
+			{
+				/* Whole poly inside the guard band, trivially accept */
+			}
+			else if (oc1 & oc2 & oc3)
+			{
+				/* Partially inside the view port and not inside the guard band?? */
+				assert(false && "rasterizer_rasterize: Poly can't be partailly in view and wholly totally outside the guard band simultaniously.");
+				continue;
+			}
+			else
+			{
+				/* We actually need to generate new triangles */
+				continue;
+			}
+		}		
 
 		uint32_t vc1 = vert_colors[ind_buf[i]];
 		uint32_t vc2 = vert_colors[ind_buf[i + 1]];
@@ -82,9 +150,6 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 		max.y = max3(p1.y, p2.y, p3.y);
 
 		/* Clip to screen and round to pixel centers */
-		int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
-		int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
-
 		min.x = (max(min.x, -half_width_sub) & ~sub_mask) + half_pixel;
 		min.y = (max(min.y, -half_height_sub) & ~sub_mask) + half_pixel;
 		max.x = ((min(max.x, half_width_sub - sub_multip) + sub_mask) & ~sub_mask) + half_pixel;
