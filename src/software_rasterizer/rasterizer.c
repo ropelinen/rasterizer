@@ -96,6 +96,55 @@ struct vec2_int get_gb_intersection_point(const unsigned int oc, const struct ve
 	return result;
 }
 
+void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, const float *w_arr, const uint32_t *color_arr, unsigned int p0i, unsigned int p1i
+	, const struct vec2_int *clip, float *out_clipz, float *out_clipw, uint32_t *out_clipcolor)
+{
+	assert(vec_arr && "lerp_vert_attributes: vec_arr is NULL");
+	assert(z_arr && "lerp_vert_attributes: z_arr is NULL");
+	assert(w_arr && "lerp_vert_attributes: w_arr is NULL");
+	assert(color_arr && "lerp_vert_attributes: color_arr is NULL");
+	assert(clip && "lerp_vert_attributes: clip is NULL");
+	assert(out_clipz && "lerp_vert_attributes: out_clipz is NULL");
+	assert(out_clipw && "lerp_vert_attributes: out_clipw is NULL");
+	assert(out_clipcolor && "lerp_vert_attributes: out_clipcolor is NULL");
+
+	const int32_t sub_multip = 1 << SUB_BITS;
+
+	/* Calculate weight */
+	uint32_t temp_x = vec_arr[p1i].x - vec_arr[p0i].x;
+	uint32_t temp_y = vec_arr[p1i].y - vec_arr[p0i].y;
+	uint32_t len_org = MUL_FIXED(temp_x, temp_x, sub_multip) + MUL_FIXED(temp_y, temp_y, sub_multip);
+	temp_x = clip->x - vec_arr[p0i].x;
+	temp_y = clip->y - vec_arr[p0i].y;
+	uint32_t len_int = MUL_FIXED(temp_x, temp_x, sub_multip) + MUL_FIXED(temp_y, temp_y, sub_multip);
+	float weight = (float)len_int / (float)len_org;
+
+	/* Interpolate w */
+	float w0_reciprocal = 1.0f / w_arr[p0i];
+	float w1_reciprocal = 1.0f / w_arr[p1i];
+	float interp_w = w0_reciprocal + (w1_reciprocal - w0_reciprocal) * weight;
+	*out_clipw = 1.0f / interp_w;
+
+	/* Interpolate z */
+	float z0 = z_arr[p0i] * w0_reciprocal;
+	float z1 = z_arr[p1i] * w1_reciprocal;
+	*out_clipz = (z0 + (z1 - z0) * weight) / interp_w;
+
+	/* Interpolate color */
+	float r0 = (float)((color_arr[p0i] & 0xFF0000) >> 16) * w0_reciprocal;
+	float r1 = (float)((color_arr[p1i] & 0xFF0000) >> 16) * w1_reciprocal;
+	float g0 = (float)((color_arr[p0i] & 0x00FF00) >> 8) * w0_reciprocal;
+	float g1 = (float)((color_arr[p1i] & 0x00FF00) >> 8) * w1_reciprocal;
+	float b0 = (float)(color_arr[p0i] & 0x0000FF) * w0_reciprocal;
+	float b1 = (float)(color_arr[p1i] & 0x0000FF) * w1_reciprocal;
+
+	uint32_t n_r = ((uint32_t)((r0 + (r1 - r0) * weight) / interp_w) & 0xFF) << 16;
+	uint32_t n_g = ((uint32_t)((g0 + (g1 - g0) * weight) / interp_w) & 0xFF) << 8;
+	uint32_t n_b = (uint32_t)((b0 + (b1 - b0) * weight) / interp_w) & 0xFF;
+
+	*out_clipcolor = n_r | n_g | n_b;
+}
+
 void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target_size, const struct vec4_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
 {
 	assert(render_target && "rasterizer_rasterize: render_target is NULL");
@@ -114,6 +163,8 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 
 	/* Reserve enough space for possible polys created by clipping */
 	struct vec2_int work_poly[7];
+	float work_z[7];
+	float work_w[7];
 	uint32_t work_vc[7];
 	unsigned int work_vert_count = 3;
 	unsigned int work_index_count = 3;
@@ -135,10 +186,16 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 
 		work_poly[0].x = TO_FIXED(vert_buf[ind_buf[i]].x / vert_buf[ind_buf[i]].w * half_width, sub_multip);
 		work_poly[0].y = TO_FIXED(vert_buf[ind_buf[i]].y / vert_buf[ind_buf[i]].w * half_height, sub_multip);
+		work_z[0] = vert_buf[ind_buf[i]].z / vert_buf[ind_buf[i]].w;
+		work_w[0] = vert_buf[ind_buf[i]].w;
 		work_poly[1].x = TO_FIXED(vert_buf[ind_buf[i + 1]].x / vert_buf[ind_buf[i + 1]].w * half_width, sub_multip);
 		work_poly[1].y = TO_FIXED(vert_buf[ind_buf[i + 1]].y / vert_buf[ind_buf[i + 1]].w * half_height, sub_multip);
+		work_z[1] = vert_buf[ind_buf[i + 1]].z / vert_buf[ind_buf[i]].w;
+		work_w[1] = vert_buf[ind_buf[i + 1]].w;
 		work_poly[2].x = TO_FIXED(vert_buf[ind_buf[i + 2]].x / vert_buf[ind_buf[i + 2]].w * half_width, sub_multip);
 		work_poly[2].y = TO_FIXED(vert_buf[ind_buf[i + 2]].y / vert_buf[ind_buf[i + 2]].w * half_height, sub_multip);
+		work_z[2] = vert_buf[ind_buf[i + 2]].z / vert_buf[ind_buf[i]].w;
+		work_w[2] = vert_buf[ind_buf[i + 2]].w;
 		work_poly_indices[0] = 0; work_poly_indices[1] = 1; work_poly_indices[2] = 2;
 		work_vert_count = 3;
 		work_index_count = 3;
@@ -193,6 +250,8 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 
 				unsigned int clipped_vert_count = 0;
 				struct vec2_int clipped_poly[7];
+				float clipped_z[7];
+				float clipped_w[7];
 				uint32_t clipped_vc[7];
 				unsigned int clipped_index_count = 0;
 				unsigned int clipped_poly_indices[15];
@@ -223,19 +282,8 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 								clipped_poly[clipped_vert_count] = get_gb_intersection_point(oc, &work_poly[work_poly_indices[vert_index]], &work_poly[work_poly_indices[vert_index + 1]]);
 								clipped_poly_indices[clipped_index_count] = clipped_vert_count;
 
-								/* lerp color */
-								uint32_t temp_x = work_poly[work_poly_indices[vert_index + 1]].x - work_poly[work_poly_indices[vert_index]].x;
-								uint32_t temp_y = work_poly[work_poly_indices[vert_index + 1]].y - work_poly[work_poly_indices[vert_index]].y;
-								uint32_t len_org = (temp_x * temp_x + temp_y * temp_y) >> SUB_BITS;
-								temp_x = clipped_poly[clipped_vert_count].x - work_poly[work_poly_indices[vert_index]].x;
-								temp_y = clipped_poly[clipped_vert_count].y - work_poly[work_poly_indices[vert_index]].y;
-								uint32_t len_int = (temp_x * temp_x + temp_y * temp_y) >> SUB_BITS;
-								float weight = (float)len_int / (float)len_org;
-
-								uint32_t n_r = (uint32_t)(((float)(work_vc[work_poly_indices[vert_index]] & 0xFF0000) * (1.0f - weight)) + ((float)(work_vc[work_poly_indices[vert_index + 1]] & 0xFF0000) * weight)) & 0xFF0000;
-								uint32_t n_g = (uint32_t)(((float)(work_vc[work_poly_indices[vert_index]] & 0x00FF00) * (1.0f - weight)) + ((float)(work_vc[work_poly_indices[vert_index + 1]] & 0x00FF00) * weight)) & 0x00FF00;
-								uint32_t n_b = (uint32_t)(((float)(work_vc[work_poly_indices[vert_index]] & 0x0000FF) * (1.0f - weight)) + ((float)(work_vc[work_poly_indices[vert_index + 1]] & 0x0000FF) * weight)) & 0x0000FF;
-								clipped_vc[clipped_vert_count] = n_r | n_g | n_b;
+								lerp_vert_attributes(&work_poly[0], &work_z[0], &work_w[0], &work_vc[0], work_poly_indices[vert_index], work_poly_indices[vert_index + 1]
+									, &clipped_poly[clipped_vert_count], &clipped_z[clipped_vert_count], &clipped_w[clipped_vert_count], &clipped_vc[clipped_vert_count]);
 
 								++clipped_vert_count;
 								++clipped_index_count;
@@ -249,19 +297,8 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 								clipped_poly[clipped_vert_count] = get_gb_intersection_point(oc, &work_poly[work_poly_indices[vert_index + 1]], &work_poly[work_poly_indices[vert_index]]);
 								clipped_poly_indices[clipped_index_count] = clipped_vert_count;
 
-								/* lerp color */
-								uint32_t temp_x = work_poly[work_poly_indices[vert_index + 1]].x - work_poly[work_poly_indices[vert_index]].x;
-								uint32_t temp_y = work_poly[work_poly_indices[vert_index + 1]].y - work_poly[work_poly_indices[vert_index]].y;
-								uint32_t len_org = temp_x * temp_x + temp_y * temp_y;
-								temp_x = clipped_poly[clipped_vert_count].x - work_poly[work_poly_indices[vert_index]].x;
-								temp_y = clipped_poly[clipped_vert_count].y - work_poly[work_poly_indices[vert_index]].y;
-								uint32_t len_int = temp_x * temp_x + temp_y * temp_y;;
-								float weight = (float)len_int / (float)len_org;
-
-								uint32_t n_r = (uint32_t)(((float)(work_vc[work_poly_indices[vert_index]] & 0xFF0000) * (1.0f - weight)) + ((float)(work_vc[work_poly_indices[vert_index + 1]] & 0xFF0000) * weight)) & 0xFF0000;
-								uint32_t n_g = (uint32_t)(((float)(work_vc[work_poly_indices[vert_index]] & 0x00FF00) * (1.0f - weight)) + ((float)(work_vc[work_poly_indices[vert_index + 1]] & 0x00FF00) * weight)) & 0x00FF00;
-								uint32_t n_b = (uint32_t)(((float)(work_vc[work_poly_indices[vert_index]] & 0x0000FF) * (1.0f - weight)) + ((float)(work_vc[work_poly_indices[vert_index + 1]] & 0x0000FF) * weight)) & 0x0000FF;
-								clipped_vc[clipped_vert_count] = n_r | n_g | n_b;
+								lerp_vert_attributes(&work_poly[0], &work_z[0], &work_w[0], &work_vc[0], work_poly_indices[vert_index + 1], work_poly_indices[vert_index]
+									, &clipped_poly[clipped_vert_count], &clipped_z[clipped_vert_count], &clipped_w[clipped_vert_count], &clipped_vc[clipped_vert_count]);
 
 								++clipped_vert_count;
 								++clipped_index_count;
@@ -284,6 +321,8 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 					for (unsigned int j = 0; j < work_vert_count; ++j)
 					{
 						work_poly[j] = clipped_poly[j];
+						work_z[j] = clipped_z[j];
+						work_w[j] = clipped_w[j];
 						work_vc[j] = clipped_vc[j];
 					}
 
