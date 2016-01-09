@@ -3,16 +3,18 @@
 
 #include "software_rasterizer/vector.h"
 
-/* 4 sub bits gives us [-1024, 1023] max render target.
+/* 4 sub bits gives us [-2048, 2047] max render target.
  * It should be possible to get something similar out of 8 sub bits. */
 #define SUB_BITS 4
 #define TO_FIXED(val, multip) (int32_t)((val) * (multip) + 0.5f)
 #define MUL_FIXED(val1, val2, multip) (((val1) * (val2)) / (multip))
 
-#define GB_LEFT (TO_FIXED(-1024, (1 << SUB_BITS)))
-#define GB_BOTTOM (TO_FIXED(-1024, (1 << SUB_BITS)))
-#define GB_RIGHT (TO_FIXED(1023, (1 << SUB_BITS)))
-#define GB_TOP (TO_FIXED(1023, (1 << SUB_BITS)))
+#define GB_MIN -2048
+#define GB_MAX 2047
+#define GB_LEFT (TO_FIXED(GB_MIN, (1 << SUB_BITS)))
+#define GB_BOTTOM (TO_FIXED(GB_MIN, (1 << SUB_BITS)))
+#define GB_RIGHT (TO_FIXED(GB_MAX, (1 << SUB_BITS)))
+#define GB_TOP (TO_FIXED(GB_MAX, (1 << SUB_BITS)))
 
 /* Taken straight from https://fgiesen.wordpress.com/2013/02/08/triangle-rasterization-in-practice/ 
  * Returns the signed A*2 of the triangle formed by the three points. 
@@ -154,7 +156,7 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 	assert(ind_buf && "rasterizer_rasterize: ind_buf is NULL");
 	assert(index_count % 3 == 0 && "rasterizer_rasterize: index count is not valid");
 	assert(SUB_BITS == 4 && "rasterizer_rasterize: SUB_BITS has changed, check the assert below.");
-	assert(target_size->x <= 2048 && target_size->y <= 2048 && "rasterizer_rasterize: render target is too large");
+	assert(target_size->x <= (2 * -(GB_MIN)) && target_size->y <= (2 * -(GB_MIN)) && "rasterizer_rasterize: render target is too large");
 
 	/* Sub-pixel constants */
 	const int32_t sub_multip = 1 << SUB_BITS;
@@ -220,10 +222,10 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 		else
 		{
 			/* Test guard band clipping */
-			const int32_t minx = TO_FIXED(-1024, sub_multip);
-			const int32_t miny = TO_FIXED(-1024, sub_multip);
-			const int32_t maxx = TO_FIXED(1023, sub_multip);
-			const int32_t maxy = TO_FIXED(1023, sub_multip);
+			const int32_t minx = TO_FIXED(GB_MIN, sub_multip);
+			const int32_t miny = TO_FIXED(GB_MIN, sub_multip);
+			const int32_t maxx = TO_FIXED(GB_MAX, sub_multip);
+			const int32_t maxy = TO_FIXED(GB_MAX, sub_multip);
 
 			oc0 = compute_out_code(&work_poly[0], minx, miny, maxx, maxy);
 			oc1 = compute_out_code(&work_poly[1], minx, miny, maxx, maxy);
