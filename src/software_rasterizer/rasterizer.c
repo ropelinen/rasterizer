@@ -25,7 +25,7 @@ int32_t winding_2d(const struct vec2_int *p1, const struct vec2_int *p2, const s
 	assert(p2 && "winding_2d: p2 is NULL");
 	assert(p3 && "winding_2d: p3 is NULL");
 
-	int32_t sub_multip = 1 << SUB_BITS;
+	const int32_t sub_multip = 1 << SUB_BITS;
 	return MUL_FIXED(p1->y - p2->y, p3->x, sub_multip) + MUL_FIXED(p2->x - p1->x, p3->y, sub_multip) + (MUL_FIXED(p1->x, p2->y, sub_multip) - MUL_FIXED(p1->y, p2->x, sub_multip));
 }
 
@@ -122,23 +122,21 @@ void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, co
 	float weight = (float)len_int / (float)len_org;
 
 	/* Interpolate w */
-	float w0_reciprocal = 1.0f / w_arr[p0i];
-	float w1_reciprocal = 1.0f / w_arr[p1i];
-	float interp_w = w0_reciprocal + (w1_reciprocal - w0_reciprocal) * weight;
-	*out_clipw = 1.0f / interp_w;
+	float interp_w = w_arr[p0i] + (w_arr[p1i] - w_arr[p0i]) * weight;
+	*out_clipw = interp_w;
 
 	/* Interpolate z */
-	float z0 = z_arr[p0i] * w0_reciprocal;
-	float z1 = z_arr[p1i] * w1_reciprocal;
+	float z0 = z_arr[p0i] * w_arr[p0i];
+	float z1 = z_arr[p1i] * w_arr[p1i];
 	*out_clipz = (z0 + (z1 - z0) * weight) / interp_w;
 
 	/* Interpolate color */
-	float r0 = (float)((color_arr[p0i] & 0xFF0000) >> 16) * w0_reciprocal;
-	float r1 = (float)((color_arr[p1i] & 0xFF0000) >> 16) * w1_reciprocal;
-	float g0 = (float)((color_arr[p0i] & 0x00FF00) >> 8) * w0_reciprocal;
-	float g1 = (float)((color_arr[p1i] & 0x00FF00) >> 8) * w1_reciprocal;
-	float b0 = (float)(color_arr[p0i] & 0x0000FF) * w0_reciprocal;
-	float b1 = (float)(color_arr[p1i] & 0x0000FF) * w1_reciprocal;
+	float r0 = (float)((color_arr[p0i] & 0xFF0000) >> 16) * w_arr[p0i];
+	float r1 = (float)((color_arr[p1i] & 0xFF0000) >> 16) * w_arr[p1i];
+	float g0 = (float)((color_arr[p0i] & 0x00FF00) >> 8) * w_arr[p0i];
+	float g1 = (float)((color_arr[p1i] & 0x00FF00) >> 8) * w_arr[p1i];
+	float b0 = (float)(color_arr[p0i] & 0x0000FF) * w_arr[p0i];
+	float b1 = (float)(color_arr[p1i] & 0x0000FF) * w_arr[p1i];
 
 	uint32_t n_r = ((uint32_t)((r0 + (r1 - r0) * weight) / interp_w) & 0xFF) << 16;
 	uint32_t n_g = ((uint32_t)((g0 + (g1 - g0) * weight) / interp_w) & 0xFF) << 8;
@@ -166,7 +164,7 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 	/* Reserve enough space for possible polys created by clipping */
 	struct vec2_int work_poly[7];
 	float work_z[7];
-	float work_w[7];
+	float work_w[7]; /* Note that this is actually the reciprocal of w */
 	uint32_t work_vc[7];
 	unsigned int work_vert_count = 3;
 	unsigned int work_index_count = 3;
@@ -189,15 +187,15 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 		work_poly[0].x = TO_FIXED(vert_buf[ind_buf[i]].x / vert_buf[ind_buf[i]].w * half_width, sub_multip);
 		work_poly[0].y = TO_FIXED(vert_buf[ind_buf[i]].y / vert_buf[ind_buf[i]].w * half_height, sub_multip);
 		work_z[0] = vert_buf[ind_buf[i]].z / vert_buf[ind_buf[i]].w;
-		work_w[0] = vert_buf[ind_buf[i]].w;
+		work_w[0] = 1.0f / vert_buf[ind_buf[i]].w;
 		work_poly[1].x = TO_FIXED(vert_buf[ind_buf[i + 1]].x / vert_buf[ind_buf[i + 1]].w * half_width, sub_multip);
 		work_poly[1].y = TO_FIXED(vert_buf[ind_buf[i + 1]].y / vert_buf[ind_buf[i + 1]].w * half_height, sub_multip);
 		work_z[1] = vert_buf[ind_buf[i + 1]].z / vert_buf[ind_buf[i]].w;
-		work_w[1] = vert_buf[ind_buf[i + 1]].w;
+		work_w[1] = 1.0f / vert_buf[ind_buf[i + 1]].w;
 		work_poly[2].x = TO_FIXED(vert_buf[ind_buf[i + 2]].x / vert_buf[ind_buf[i + 2]].w * half_width, sub_multip);
 		work_poly[2].y = TO_FIXED(vert_buf[ind_buf[i + 2]].y / vert_buf[ind_buf[i + 2]].w * half_height, sub_multip);
 		work_z[2] = vert_buf[ind_buf[i + 2]].z / vert_buf[ind_buf[i]].w;
-		work_w[2] = vert_buf[ind_buf[i + 2]].w;
+		work_w[2] = 1.0f / vert_buf[ind_buf[i + 2]].w;
 		work_poly_indices[0] = 0; work_poly_indices[1] = 1; work_poly_indices[2] = 2;
 		work_vert_count = 3;
 		work_index_count = 3;
