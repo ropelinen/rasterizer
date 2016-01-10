@@ -50,7 +50,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	/* Transfrom related */
 	float rot = 0.0f;
 	struct vec3_float translation = { .x = 2.0f, .y = -4.0f, .z = 10.0f };
-	struct vec3_float camera_trans = { .x = 2.0f,.y = -4.0f,.z = 0.0f };
+	struct vec3_float camera_trans = { .x = 2.0f, .y = -4.0f, .z = 0.0f };
 	struct matrix_3x4 trans_mat = mat34_get_translation(&translation);
 	translation.x += 2.0f;
 	translation.z += 3.0f;
@@ -58,6 +58,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 	struct vec2_int backbuffer_size = get_backbuffer_size(renderer_info);
 	struct matrix_4x4 perspective_mat = mat44_get_perspective_lh_fov(DEG_TO_RAD(59.0f), (float)backbuffer_size.x / (float)backbuffer_size.y, 1.0f, 1000.0f);
+	float *depth_buf = malloc(backbuffer_size.x * backbuffer_size.y * sizeof(float));
 
 	uint32_t frame_time_mus = 0;
 
@@ -70,7 +71,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		handle_input(api_info, dt, &camera_trans);
 
 		/* Update test rotation */
-		rot += dt * (float)PI / 16.0f;
+		rot += dt * (float)PI / 32.0f;
 		if (rot > PI * 2.0f) rot -= PI * 2.0f;
 
 		/* Projection and view*/
@@ -93,8 +94,9 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 			final_vert_buf2[i] = mat44_mul_vec3(&final_transform2, &vert_buf[i]);
 		}
 
-		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
-		rasterizer_rasterize(get_backbuffer(renderer_info), &backbuffer_size, &final_vert_buf2[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
+		rasterizer_clear_depth_buffer(depth_buf, &backbuffer_size);
+		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
+		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf2[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
 
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
@@ -111,6 +113,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 		frame_start = frame_end;
 	}
+
+	free(depth_buf);
 
 	stats_destroy(&stats);
 	if (font)
