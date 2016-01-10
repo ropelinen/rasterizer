@@ -417,12 +417,22 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 						float w1_f = min((float)w1 / double_tri_area, 1.0f);
 						float w2_f = max(1.0f - w0_f - w1_f, 0.0f);
 
-						uint32_t n_r = (uint32_t)(((float)(work_vc[i0] & 0xFF0000) * w0_f) + ((float)(work_vc[i1] & 0xFF0000) * w1_f) + ((float)(work_vc[i2] & 0xFF0000) * w2_f)) & 0xFF0000;
-						uint32_t n_g = (uint32_t)(((float)(work_vc[i0] & 0x00FF00) * w0_f) + ((float)(work_vc[i1] & 0x00FF00) * w1_f) + ((float)(work_vc[i2] & 0x00FF00) * w2_f)) & 0x00FF00;
-						uint32_t n_b = (uint32_t)(((float)(work_vc[i0] & 0x0000FF) * w0_f) + ((float)(work_vc[i1] & 0x0000FF) * w1_f) + ((float)(work_vc[i2] & 0x0000FF) * w2_f)) & 0x0000FF;
+						float interp_w = work_w[i0] * w0_f + work_w[i1] * w1_f + work_w[i2] * w2_f;
+						float n_r = ((work_vc[i0] & 0xFF0000) >> 16) * work_w[i0] * w0_f
+							+ ((work_vc[i1] & 0xFF0000) >> 16) * work_w[i1] * w1_f
+							+ ((work_vc[i2] & 0xFF0000) >> 16) * work_w[i2] * w2_f;
+						n_r /= interp_w;
+						float n_g = ((work_vc[i0] & 0x00FF00) >> 8) * work_w[i0] * w0_f
+							+ ((work_vc[i1] & 0x00FF00) >> 8) * work_w[i1] * w1_f
+							+ ((work_vc[i2] & 0x00FF00) >> 8) * work_w[i2] * w2_f;
+						n_g /= interp_w;
+						float n_b = (work_vc[i0] & 0x0000FF) * work_w[i0] * w0_f
+							+ (work_vc[i1] & 0x0000FF) * work_w[i1] * w1_f
+							+ (work_vc[i2] & 0x0000FF) * work_w[i2] * w2_f;
+						n_b /= interp_w;
 
 						assert(pixel_index < (unsigned)(target_size->x * target_size->y) && "rasterizer_rasterize: invalid pixel_index");
-						render_target[pixel_index] = n_r | n_g | n_b;
+						render_target[pixel_index] = ((uint32_t)n_r << 16) | ((uint32_t)n_g << 8) | (uint32_t)n_b;
 					}
 
 					w0 += step_x_12;
