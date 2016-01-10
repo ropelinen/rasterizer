@@ -121,14 +121,14 @@ void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, co
 	uint32_t len_int = MUL_FIXED(temp_x, temp_x, sub_multip) + MUL_FIXED(temp_y, temp_y, sub_multip);
 	float weight = (float)len_int / (float)len_org;
 
+	/* Interpolate z */
+	float z0 = z_arr[p0i];
+	float z1 = z_arr[p1i];
+	*out_clipz = (z0 + (z1 - z0) * weight);
+
 	/* Interpolate w */
 	float interp_w = w_arr[p0i] + (w_arr[p1i] - w_arr[p0i]) * weight;
 	*out_clipw = interp_w;
-
-	/* Interpolate z */
-	float z0 = z_arr[p0i] * w_arr[p0i];
-	float z1 = z_arr[p1i] * w_arr[p1i];
-	*out_clipz = (z0 + (z1 - z0) * weight) / interp_w;
 
 	/* Interpolate color */
 	float r0 = (float)((color_arr[p0i] & 0xFF0000) >> 16) * w_arr[p0i];
@@ -145,9 +145,10 @@ void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, co
 	*out_clipcolor = n_r | n_g | n_b;
 }
 
-void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target_size, const struct vec4_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
+void rasterizer_rasterize(uint32_t *render_target, float *depth_buf, const struct vec2_int *target_size, const struct vec4_float *vert_buf, const uint32_t *vert_colors, const unsigned int *ind_buf, const unsigned int index_count)
 {
 	assert(render_target && "rasterizer_rasterize: render_target is NULL");
+	assert(depth_buf && "rasterizer_rasterize: depth_buf is NULL");
 	assert(target_size && "rasterizer_rasterize: target_size is NULL");
 	assert(vert_buf && "rasterizer_rasterize: vert_buf is NULL");
 	assert(vert_colors && "rasterizer_rasterize: vert_colors is NULL");
@@ -190,11 +191,11 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 		work_w[0] = 1.0f / vert_buf[ind_buf[i]].w;
 		work_poly[1].x = TO_FIXED(vert_buf[ind_buf[i + 1]].x / vert_buf[ind_buf[i + 1]].w * half_width, sub_multip);
 		work_poly[1].y = TO_FIXED(vert_buf[ind_buf[i + 1]].y / vert_buf[ind_buf[i + 1]].w * half_height, sub_multip);
-		work_z[1] = vert_buf[ind_buf[i + 1]].z / vert_buf[ind_buf[i]].w;
+		work_z[1] = vert_buf[ind_buf[i + 1]].z / vert_buf[ind_buf[i + 1]].w;
 		work_w[1] = 1.0f / vert_buf[ind_buf[i + 1]].w;
 		work_poly[2].x = TO_FIXED(vert_buf[ind_buf[i + 2]].x / vert_buf[ind_buf[i + 2]].w * half_width, sub_multip);
 		work_poly[2].y = TO_FIXED(vert_buf[ind_buf[i + 2]].y / vert_buf[ind_buf[i + 2]].w * half_height, sub_multip);
-		work_z[2] = vert_buf[ind_buf[i + 2]].z / vert_buf[ind_buf[i]].w;
+		work_z[2] = vert_buf[ind_buf[i + 2]].z / vert_buf[ind_buf[i + 2]].w;
 		work_w[2] = 1.0f / vert_buf[ind_buf[i + 2]].w;
 		work_poly_indices[0] = 0; work_poly_indices[1] = 1; work_poly_indices[2] = 2;
 		work_vert_count = 3;
@@ -389,6 +390,9 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 			int32_t step_y_12 = work_poly[i2].x - work_poly[i1].x;
 			int32_t step_y_20 = work_poly[i0].x - work_poly[i2].x;
 
+			float z10 = work_z[i1] - work_z[i0];
+			float z20 = work_z[i2] - work_z[i0];
+
 			float double_tri_area = (float)winding_2d(&work_poly[i0], &work_poly[i1], &work_poly[i2]);
 
 			/* How we calculate and step this is based on the format of the backbuffer.
@@ -417,22 +421,29 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 						float w1_f = min((float)w1 / double_tri_area, 1.0f);
 						float w2_f = max(1.0f - w0_f - w1_f, 0.0f);
 
-						float interp_w = work_w[i0] * w0_f + work_w[i1] * w1_f + work_w[i2] * w2_f;
-						float n_r = ((work_vc[i0] & 0xFF0000) >> 16) * work_w[i0] * w0_f
-							+ ((work_vc[i1] & 0xFF0000) >> 16) * work_w[i1] * w1_f
-							+ ((work_vc[i2] & 0xFF0000) >> 16) * work_w[i2] * w2_f;
-						n_r /= interp_w;
-						float n_g = ((work_vc[i0] & 0x00FF00) >> 8) * work_w[i0] * w0_f
-							+ ((work_vc[i1] & 0x00FF00) >> 8) * work_w[i1] * w1_f
-							+ ((work_vc[i2] & 0x00FF00) >> 8) * work_w[i2] * w2_f;
-						n_g /= interp_w;
-						float n_b = (work_vc[i0] & 0x0000FF) * work_w[i0] * w0_f
-							+ (work_vc[i1] & 0x0000FF) * work_w[i1] * w1_f
-							+ (work_vc[i2] & 0x0000FF) * work_w[i2] * w2_f;
-						n_b /= interp_w;
+						float z = work_z[i0] + (w1_f * z10) + (w2_f * z20);
+						
+						if (z < depth_buf[pixel_index])
+						{
+							depth_buf[pixel_index] = z;
 
-						assert(pixel_index < (unsigned)(target_size->x * target_size->y) && "rasterizer_rasterize: invalid pixel_index");
-						render_target[pixel_index] = ((uint32_t)n_r << 16) | ((uint32_t)n_g << 8) | (uint32_t)n_b;
+							float interp_w = work_w[i0] * w0_f + work_w[i1] * w1_f + work_w[i2] * w2_f;
+							float n_r = ((work_vc[i0] & 0xFF0000) >> 16) * work_w[i0] * w0_f
+								+ ((work_vc[i1] & 0xFF0000) >> 16) * work_w[i1] * w1_f
+								+ ((work_vc[i2] & 0xFF0000) >> 16) * work_w[i2] * w2_f;
+							n_r /= interp_w;
+							float n_g = ((work_vc[i0] & 0x00FF00) >> 8) * work_w[i0] * w0_f
+								+ ((work_vc[i1] & 0x00FF00) >> 8) * work_w[i1] * w1_f
+								+ ((work_vc[i2] & 0x00FF00) >> 8) * work_w[i2] * w2_f;
+							n_g /= interp_w;
+							float n_b = (work_vc[i0] & 0x0000FF) * work_w[i0] * w0_f
+								+ (work_vc[i1] & 0x0000FF) * work_w[i1] * w1_f
+								+ (work_vc[i2] & 0x0000FF) * work_w[i2] * w2_f;
+							n_b /= interp_w;
+
+							assert(pixel_index < (unsigned)(target_size->x * target_size->y) && "rasterizer_rasterize: invalid pixel_index");
+							render_target[pixel_index] = ((uint32_t)n_r << 16) | ((uint32_t)n_g << 8) | (uint32_t)n_b;
+						}
 					}
 
 					w0 += step_x_12;
@@ -450,4 +461,13 @@ void rasterizer_rasterize(uint32_t *render_target, const struct vec2_int *target
 			}
 		}
 	}
+}
+
+void rasterizer_clear_depth_buffer(float *depth_buf, const struct vec2_int *buf_size)
+{
+	assert(depth_buf && "rasterizer_clear_depth_buffer: depth_buf is NULL");
+	assert(buf_size && "rasterizer_clear_depth_buffer: buf_size is NULL");
+
+	for (int i = 0; i < buf_size->x * buf_size->y; ++i)
+		depth_buf[i] = 1.0f;
 }
