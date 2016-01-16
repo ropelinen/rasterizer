@@ -4,8 +4,11 @@
 
 #include "software_rasterizer/vector.h"
 
+#pragma warning(push)
+#pragma warning(disable : 4255) /* no function prototype given : converting '()' to '(void)' */
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb\stb_image.h>
+#pragma warning(pop)
 
 struct texture
 {
