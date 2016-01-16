@@ -136,7 +136,7 @@ void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, co
 
 	/* Interpolate uv */
 	float uv0 = uv_arr[p0i].x * w_arr[p0i];
-	float uv1 =  uv_arr[p1i].x * w_arr[p1i];
+	float uv1 = uv_arr[p1i].x * w_arr[p1i];
 	out_clipuv->x = (uv0 + (uv1 - uv0) * weight) / interp_w;
 	assert(out_clipuv->x >= 0.0f && out_clipuv->x <= 1.0f && "lerp_vert_attributes: Invalid interpolated u");
 
@@ -275,6 +275,8 @@ void rasterizer_rasterize(uint32_t *render_target, float *depth_buf, const struc
 							{
 								/* both inside, add second */
 								clipped_poly[clipped_vert_count] = work_poly[work_poly_indices[vert_index + 1]];
+								clipped_z[clipped_vert_count] = work_z[work_poly_indices[vert_index + 1]];
+								clipped_w[clipped_vert_count] = work_w[work_poly_indices[vert_index + 1]];
 								clipped_uv[clipped_vert_count] = work_uv[work_poly_indices[vert_index + 1]];
 								clipped_poly_indices[clipped_index_count] = clipped_vert_count;
 								++clipped_vert_count;
@@ -308,6 +310,8 @@ void rasterizer_rasterize(uint32_t *render_target, float *depth_buf, const struc
 								++clipped_index_count;
 
 								clipped_poly[clipped_vert_count] = work_poly[work_poly_indices[vert_index + 1]];
+								clipped_z[clipped_vert_count] = work_z[work_poly_indices[vert_index + 1]];
+								clipped_w[clipped_vert_count] = work_w[work_poly_indices[vert_index + 1]];
 								clipped_uv[clipped_vert_count] = work_uv[work_poly_indices[vert_index + 1]];
 								clipped_poly_indices[clipped_index_count] = clipped_vert_count;
 								++clipped_vert_count;
