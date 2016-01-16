@@ -3,6 +3,7 @@
 #include "software_rasterizer/demo/font.h"
 #include "software_rasterizer/demo/osal.h"
 #include "software_rasterizer/demo/stats.h"
+#include "software_rasterizer/demo/texture.h"
 #include "software_rasterizer/rasterizer.h"
 
 void handle_input(struct api_info *api_info, float dt, struct vec3_float *camera_trans);
@@ -19,6 +20,16 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 {
 	assert(api_info && "main: api_info is NULL");
 	assert(renderer_info && "main: renderer_info is NULL");
+
+	struct texture *texture = texture_create("brick_base.png");
+	if (!texture)
+		error_popup("Failed to load the texture", true);
+
+	/* Fix this :D */
+	uint32_t *texture_data;
+	struct vec2_int *texture_size;
+
+	texture_get_info(texture, &texture_data, &texture_size);
 
 	struct font *font = font_create("Rockwell.ttf");
 	if (!font)
@@ -38,8 +49,10 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 									  { .x = 2.0f, .y = 2.0f, .z = 2.0f }, { .x = 2.0f, .y = -2.0f, .z = 2.0f } };
 	struct vec4_float final_vert_buf[8];
 	struct vec4_float final_vert_buf2[8];
-	uint32_t vert_colors[8] = { 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF
-	                          , 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF };
+	/*uint32_t vert_colors[8] = { 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF
+	                          , 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF };*/
+	struct vec2_float uv[8] = { { .x = 0.0f, .y = 0.0f }, { .x = 0.0f, .y = 1.0f }, { .x = 1.0f, .y = 0.0f }, { .x = 1.0f, .y = 1.0f }
+							  , { .x = 1.0f, .y = 0.0f }, { .x = 1.0f, .y = 1.0f }, { .x = 0.0f, .y = 0.0f }, { .x = 0.0f, .y = 1.0f } };
 	unsigned int ind_buf[36] = { 0, 1, 3, 3, 2, 0 /* front */
 	                           , 0, 2, 4, 4, 2, 6 /* top */ 
 	                           , 1, 5, 3, 3, 5, 7 /* bottom */
@@ -95,8 +108,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		}
 
 		rasterizer_clear_depth_buffer(depth_buf, &backbuffer_size);
-		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
-		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf2[0], &vert_colors[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]));
+		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf[0], &uv[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]), texture_data, texture_size);
+		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf2[0], &uv[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]), texture_data, texture_size);
 
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
@@ -119,6 +132,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	stats_destroy(&stats);
 	if (font)
 		font_destroy(&font);
+
+	texture_destroy(&texture);
 }
 
 void handle_input(struct api_info *api_info, float dt, struct vec3_float *camera_trans)
