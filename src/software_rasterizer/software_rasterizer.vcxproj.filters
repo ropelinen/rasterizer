@@ -39,6 +39,9 @@
     <ClCompile Include="matrix.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="demo\texture.c">
+      <Filter>Source Files\demo</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="demo\osal.h">
@@ -67,6 +70,9 @@
     </ClInclude>
     <ClInclude Include="matrix.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="demo\texture.h">
+      <Filter>Source Files\demo</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
