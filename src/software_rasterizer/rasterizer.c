@@ -400,6 +400,15 @@ void rasterizer_rasterize(uint32_t *render_target, float *depth_buf, const struc
 			float z10 = work_z[i1] - work_z[i0];
 			float z20 = work_z[i2] - work_z[i0];
 
+			struct vec2_float uv0;
+			uv0.x = work_uv[i0].x * work_w[i0]; uv0.y = work_uv[i0].y * work_w[i0];
+			struct vec2_float uv10;
+			uv10.x = work_uv[i1].x * work_w[i1] - work_uv[i0].x * work_w[i0];
+			uv10.y = work_uv[i1].y * work_w[i1] - work_uv[i0].y * work_w[i0];
+			struct vec2_float uv20;
+			uv20.x = work_uv[i2].x * work_w[i2] - work_uv[i0].x * work_w[i0];
+			uv20.y = work_uv[i2].y * work_w[i2] - work_uv[i0].y * work_w[i0];
+
 			float double_tri_area = (float)winding_2d(&work_poly[i0], &work_poly[i1], &work_poly[i2]);
 
 			/* How we calculate and step this is based on the format of the backbuffer.
@@ -435,13 +444,9 @@ void rasterizer_rasterize(uint32_t *render_target, float *depth_buf, const struc
 							depth_buf[pixel_index] = z;
 
 							float interp_w = work_w[i0] * w0_f + work_w[i1] * w1_f + work_w[i2] * w2_f;
-							float u = work_uv[i0].x * work_w[i0] * w0_f
-								+ work_uv[i1].x * work_w[i1] * w1_f
-								+ work_uv[i2].x * work_w[i2] * w2_f;
+							float u = uv0.x + (w1_f * uv10.x) + (w2_f * uv20.x);
 							u /= interp_w;
-							float v = work_uv[i0].y * work_w[i0] * w0_f
-								+ work_uv[i1].y * work_w[i1] * w1_f
-								+ work_uv[i2].y * work_w[i2] * w2_f;
+							float v = uv0.y + (w1_f * uv10.y) + (w2_f * uv20.y);
 							v /= interp_w;
 
 							const unsigned int texture_index = (unsigned)((texture_size->y - 1) * v) * (unsigned)texture_size->x + (unsigned)((texture_size->x - 1) * u);
