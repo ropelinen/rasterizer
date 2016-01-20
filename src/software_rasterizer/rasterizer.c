@@ -11,6 +11,10 @@
 #define TO_FIXED(val, multip) (int32_t)((val) * (multip) + 0.5f)
 #define MUL_FIXED(val1, val2, multip) (((val1) * (val2)) / (multip))
 
+/* Number of bits reserved for depth
+ * The rest are reserved for future use (stencil) */
+#define DEPTH_BITS 24
+
 #define GB_MIN -2048
 #define GB_MAX 2047
 #define GB_LEFT (TO_FIXED(GB_MIN, (1 << SUB_BITS)))
@@ -146,7 +150,7 @@ void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, co
 	assert(out_clipuv->y >= 0.0f && out_clipuv->y <= 1.0f && "lerp_vert_attributes: Invalid interpolated v");
 }
 
-void rasterizer_rasterize(uint32_t *render_target, float *depth_buf, const struct vec2_int *target_size, const struct vec4_float *vert_buf, const struct vec2_float *uv_buf, const unsigned int *ind_buf, const unsigned int index_count, uint32_t *texture, struct vec2_int *texture_size)
+void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const struct vec2_int *target_size, const struct vec4_float *vert_buf, const struct vec2_float *uv_buf, const unsigned int *ind_buf, const unsigned int index_count, uint32_t *texture, struct vec2_int *texture_size)
 {
 	assert(render_target && "rasterizer_rasterize: render_target is NULL");
 	assert(depth_buf && "rasterizer_rasterize: depth_buf is NULL");
@@ -437,8 +441,9 @@ void rasterizer_rasterize(uint32_t *render_target, float *depth_buf, const struc
 						float w1_f = min((float)w1 / double_tri_area, 1.0f);
 						float w2_f = max(1.0f - w0_f - w1_f, 0.0f);
 
-						float z = work_z[i0] + (w1_f * z10) + (w2_f * z20);
-						
+						uint32_t z = (uint32_t)((work_z[i0] + (w1_f * z10) + (w2_f * z20)) * (1 << DEPTH_BITS));
+						assert(z < ((1 << DEPTH_BITS) + 1) && "rasterizer_rasterize: z value is too large");
+
 						if (z < depth_buf[pixel_index])
 						{
 							depth_buf[pixel_index] = z;
@@ -473,11 +478,11 @@ void rasterizer_rasterize(uint32_t *render_target, float *depth_buf, const struc
 	}
 }
 
-void rasterizer_clear_depth_buffer(float *depth_buf, const struct vec2_int *buf_size)
+void rasterizer_clear_depth_buffer(uint32_t *depth_buf, const struct vec2_int *buf_size)
 {
 	assert(depth_buf && "rasterizer_clear_depth_buffer: depth_buf is NULL");
 	assert(buf_size && "rasterizer_clear_depth_buffer: buf_size is NULL");
 
 	for (int i = 0; i < buf_size->x * buf_size->y; ++i)
-		depth_buf[i] = 1.0f;
+		depth_buf[i] |= 0x00FFFFFF;
 }

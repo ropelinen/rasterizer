@@ -71,7 +71,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 	struct vec2_int backbuffer_size = get_backbuffer_size(renderer_info);
 	struct matrix_4x4 perspective_mat = mat44_get_perspective_lh_fov(DEG_TO_RAD(59.0f), (float)backbuffer_size.x / (float)backbuffer_size.y, 1.0f, 1000.0f);
-	float *depth_buf = malloc(backbuffer_size.x * backbuffer_size.y * sizeof(float));
+	uint32_t *depth_buf = malloc(backbuffer_size.x * backbuffer_size.y * sizeof(uint32_t));
 
 	uint32_t frame_time_mus = 0;
 
