@@ -38,9 +38,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	if (font)
 		font_set_line_height(font, 19);
 
-	struct stats *stats = stats_create(STAT_COUNT, 120);
-
-	uint64_t frame_start = get_time();
+	struct stats *stats = stats_create(STAT_COUNT, 1000, true);
+	unsigned int stabilizing_delay = 500;
 
 	/* Test tri, CCW */
 	struct vec3_float vert_buf[8] = { { .x = -2.0f, .y = 2.0f, .z = -2.0f }, { .x = -2.0f, .y = -2.0f, .z = -2.0f },
@@ -61,7 +60,6 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	                           , 6, 7, 5, 5, 4, 6 }; /* back */
 	
 	/* Transfrom related */
-	float rot = 0.0f;
 	struct vec3_float translation = { .x = 2.0f, .y = -4.0f, .z = 10.0f };
 	struct vec3_float camera_trans = { .x = 2.0f, .y = -4.0f, .z = 0.0f };
 	struct matrix_3x4 trans_mat = mat34_get_translation(&translation);
@@ -75,17 +73,18 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 	uint32_t frame_time_mus = 0;
 
+	uint64_t frame_start = get_time();
+
 	while (event_loop())
 	{
+		if (stabilizing_delay > 0)
+			--stabilizing_delay;
+
 		renderer_clear_backbuffer(renderer_info, 0xFF0000);
 
 		float dt = (float)frame_time_mus / 1000000.0f;
-		
-		handle_input(api_info, dt, &camera_trans);
 
-		/* Update test rotation */
-		rot += dt * (float)PI / 32.0f;
-		if (rot > PI * 2.0f) rot -= PI * 2.0f;
+		handle_input(api_info, dt, &camera_trans);
 
 		/* Projection and view*/
 		struct matrix_3x4 camera_mat = mat34_get_translation(&camera_trans);
@@ -94,7 +93,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 		/* World space */
 		//struct matrix_3x4 rot_mat = mat34_get_rotation_z(rot);
-		struct matrix_3x4 rot_mat = mat34_get_rotation_y(rot);
+		struct matrix_3x4 rot_mat = mat34_get_rotation_y(DEG_TO_RAD(40.0f));
 		struct matrix_3x4 world_transform = mat34_mul_mat34(&trans_mat, &rot_mat);
 		struct matrix_3x4 world_transform2 = mat34_mul_mat34(&trans_mat2, &rot_mat);
 
@@ -106,23 +105,30 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 			final_vert_buf[i] = mat44_mul_vec3(&final_transform, &vert_buf[i]);
 			final_vert_buf2[i] = mat44_mul_vec3(&final_transform2, &vert_buf[i]);
 		}
-
+		
 		rasterizer_clear_depth_buffer(depth_buf, &backbuffer_size);
+
+		uint64_t raster_duration = get_time();
 		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf[0], &uv[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]), texture_data, texture_size);
 		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf2[0], &uv[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]), texture_data, texture_size);
+		raster_duration = get_time() - raster_duration;
 
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
-		if (font)
+		if (font && stats_profiling_run_complete(stats))
 			render_stats(stats, font, get_backbuffer(renderer_info), &backbuffer_size);
 
 		finish_drawing(api_info);
 
 		uint64_t frame_end = get_time();
 		frame_time_mus = (uint32_t)get_time_microseconds(frame_end - frame_start);
-		stats_update_stat(stats, STAT_FRAME, frame_time_mus);
-		stats_update_stat(stats, STAT_BLIT, get_blit_duration_ms(renderer_info));
-		stats_frame_complete(stats);
+		if (stabilizing_delay == 0)
+		{
+			stats_update_stat(stats, STAT_FRAME, frame_time_mus);
+			stats_update_stat(stats, STAT_BLIT, get_blit_duration_ms(renderer_info));
+			stats_update_stat(stats, STAT_RASTER, (uint32_t)get_time_microseconds(raster_duration));
+			stats_frame_complete(stats);
+		}
 
 		frame_start = frame_end;
 	}
@@ -185,8 +191,10 @@ void render_stats(struct stats *stats, struct font *font, void *render_target, s
 
 	/* Frame time */
 	render_stat_line_ms(stats, font, render_target, target_size, "frame (ms):", STAT_FRAME, INFO_ROW_Y + ROW_Y_INCREMENT, STAT_COLUMN_X, FIRST_VAL_COLUMN_X, COLUMN_X_INCREMENT);
+	/* Rasterize */
+	render_stat_line_ms(stats, font, render_target, target_size, "rast (ms):", STAT_RASTER, INFO_ROW_Y + ROW_Y_INCREMENT * 2, STAT_COLUMN_X, FIRST_VAL_COLUMN_X, COLUMN_X_INCREMENT);
 	/* Blit*/
-	render_stat_line_mus(stats, font, render_target, target_size, "blit (mus):", STAT_BLIT, INFO_ROW_Y + ROW_Y_INCREMENT * 2, STAT_COLUMN_X, FIRST_VAL_COLUMN_X, COLUMN_X_INCREMENT);
+	render_stat_line_mus(stats, font, render_target, target_size, "blit (mus):", STAT_BLIT, INFO_ROW_Y + ROW_Y_INCREMENT * 3, STAT_COLUMN_X, FIRST_VAL_COLUMN_X, COLUMN_X_INCREMENT);
 
 #undef STAT_COLUMN_X
 #undef FIRS_VAL_COLUMN_X
