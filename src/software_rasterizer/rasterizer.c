@@ -244,7 +244,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 			else if (oc0 & oc1 & oc2)
 			{
 				/* Partially inside the view port and not inside the guard band?? */
-				assert(false && "rasterizer_rasterize: Poly can't be partailly in view and wholly totally outside the guard band simultaniously.");
+				assert(false && "rasterizer_rasterize: Poly can't be partailly in view and wholly outside the guard band simultaneously.");
 				continue;
 			}
 			else
