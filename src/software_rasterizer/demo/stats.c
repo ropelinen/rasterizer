@@ -21,9 +21,12 @@ struct stats
 	unsigned int current_index;
 	unsigned int frames_in_buffer;
 	unsigned char stat_count;
+	/* If set to true the stats are collected only until the buffer gets full.
+	 * Ie the index will not loop (nor is the last stat overwritten). */
+	bool profiling_run;
 };
 
-struct stats *stats_create(const unsigned char stat_count, const unsigned int frames_in_buffer)
+struct stats *stats_create(const unsigned char stat_count, const unsigned int frames_in_buffer, const bool profiling_run)
 {
 	struct stats *stats = malloc(sizeof(struct stats));
 
@@ -37,6 +40,7 @@ struct stats *stats_create(const unsigned char stat_count, const unsigned int fr
 	stats->current_index = 0;
 	stats->frames_in_buffer = frames_in_buffer;
 	stats->stat_count = stat_count;
+	stats->profiling_run = profiling_run;
 
 	return stats;
 }
@@ -50,6 +54,14 @@ void stats_destroy(struct stats **stats)
 	free((*stats)->stats_sorted);
 	free((*stats)->stats);
 	free(*stats);
+}
+
+bool stats_profiling_run_complete(const struct stats *stats)
+{
+	assert(stats && "stats_profiling_run_complete: stats is NULL");
+	assert(stats->profiling_run && "stats_profiling_run_complete: The stats are not defined as a profiling run");
+
+	return  stats->profiling_run && stats->current_index >= stats->frames_in_buffer;
 }
 
 void update_sorted(uint32_t *data, unsigned int data_size, const uint32_t new_val, const uint32_t prev_val)
@@ -130,6 +142,9 @@ void stats_update_stat(struct stats *stats, const unsigned char stat_id, const u
 	assert(stats && "stats_update_stat: stats is NULL");
 	assert(stat_id < stats->stat_count && "stats_update_stat: Too big stat_id");
 
+	if (stats->profiling_run && stats->current_index >= stats->frames_in_buffer)
+		return;
+
 	uint32_t prev_value = stats->stats[(stat_id * stats->frames_in_buffer) + stats->current_index];
 	/* No change here, don't do anything. */
 	if (time == prev_value)
@@ -154,7 +169,12 @@ void stats_frame_complete(struct stats *stats)
 
 	++(stats->current_index);
 	if (stats->current_index >= stats->frames_in_buffer)
-		stats->current_index = 0;
+	{
+		if (stats->profiling_run)
+			stats->current_index = stats->frames_in_buffer;
+		else
+			stats->current_index = 0;
+	}
 }
 
 uint32_t stats_get_stat_prev_frame(struct stats *stats, const unsigned char stat_id)
