@@ -6,7 +6,12 @@
 #include "software_rasterizer/demo/texture.h"
 #include "software_rasterizer/rasterizer.h"
 
+#define LARGE_VERT_BUF_BOXES 8
+
 void handle_input(struct api_info *api_info, float dt, struct vec3_float *camera_trans);
+
+void generate_large_test_buffers(const struct vec3_float *vert_buf_box, const struct vec2_float *uv_box, const unsigned int *ind_buf_box,
+	struct vec3_float *out_vert_buf, struct vec2_float *out_uv, unsigned int *out_ind_buf, const struct vec3_float *box_offsets, const unsigned int box_count_out);
 
 void render_stats(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size);
 void render_stat_line_ms(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size, 
@@ -48,8 +53,6 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 									  { .x = 2.0f, .y = 2.0f, .z = 2.0f }, { .x = 2.0f, .y = -2.0f, .z = 2.0f } };
 	struct vec4_float final_vert_buf[8];
 	struct vec4_float final_vert_buf2[8];
-	/*uint32_t vert_colors[8] = { 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF
-	                          , 0x00FF00, 0x0F0F0F, 0x800080, 0x0000FF };*/
 	struct vec2_float uv[8] = { { .x = 0.0f, .y = 0.0f }, { .x = 0.0f, .y = 1.0f }, { .x = 1.0f, .y = 0.0f }, { .x = 1.0f, .y = 1.0f }
 							  , { .x = 1.0f, .y = 0.0f }, { .x = 1.0f, .y = 1.0f }, { .x = 0.0f, .y = 0.0f }, { .x = 0.0f, .y = 1.0f } };
 	unsigned int ind_buf[36] = { 0, 1, 3, 3, 2, 0 /* front */
@@ -58,14 +61,36 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	                           , 0, 4, 5, 5, 1, 0 /* left */
 	                           , 2, 3, 7, 7, 6, 2 /* right */
 	                           , 6, 7, 5, 5, 4, 6 }; /* back */
+
+	struct vec3_float vert_buf_large[8 * LARGE_VERT_BUF_BOXES];
+	struct vec4_float final_vert_buf_large[8 * LARGE_VERT_BUF_BOXES];
+	struct vec4_float final_vert_buf_large2[8 * LARGE_VERT_BUF_BOXES];
+	struct vec4_float final_vert_buf_large3[8 * LARGE_VERT_BUF_BOXES];
+	struct vec2_float uv_large[8 * LARGE_VERT_BUF_BOXES];
+	unsigned int ind_buf_large[36 * LARGE_VERT_BUF_BOXES];
+	struct vec3_float box_offsets[LARGE_VERT_BUF_BOXES] = { { .x = -6.0f, .y = 6.0f, .z = 6.0f }, { .x = 2.0f, .y = 4.0f, .z = 6.0f }, { .x = -2.0f, .y = -2.0f, .z = 2.0f }, { .x = 0.0f, .y = 0.0f, .z = 0.0f },
+	                                                        { .x = -6.0f, .y = 2.0f, .z = -2.0f }, { .x = -4.0f, .y = -4.0f, .z = -8.0f }, { .x = 4.0f, .y = 6.0f, .z = -6.0f }, { .x = 2.0f, .y = 10.0f, .z = -8.0f } };
+	generate_large_test_buffers(&vert_buf[0], &uv[0], &ind_buf[0], &vert_buf_large[0], &uv_large[0], &ind_buf_large[0], &box_offsets[0], LARGE_VERT_BUF_BOXES);
 	
 	/* Transfrom related */
-	struct vec3_float translation = { .x = 2.0f, .y = -4.0f, .z = 10.0f };
+	struct vec3_float translation = { .x = -5.5f, .y = -8.0f, .z = 10.0f };
 	struct vec3_float camera_trans = { .x = 2.0f, .y = -4.0f, .z = 0.0f };
 	struct matrix_3x4 trans_mat = mat34_get_translation(&translation);
 	translation.x += 2.0f;
 	translation.z += 3.0f;
 	struct matrix_3x4 trans_mat2 = mat34_get_translation(&translation);
+	translation.x += 2.0f;
+	translation.y += 4.0f;
+	translation.z += 15.0f;
+	struct matrix_3x4 trans_mat_large = mat34_get_translation(&translation);
+	translation.x += 26.0f;
+	translation.y -= 8.0f;
+	translation.z += 10.0f;
+	struct matrix_3x4 trans_mat_large2 = mat34_get_translation(&translation);
+	translation.x += 10.0f;
+	translation.y += 18.0f;
+	translation.z += 50.0f;
+	struct matrix_3x4 trans_mat_large3 = mat34_get_translation(&translation);
 
 	struct vec2_int backbuffer_size = get_backbuffer_size(renderer_info);
 	struct matrix_4x4 perspective_mat = mat44_get_perspective_lh_fov(DEG_TO_RAD(59.0f), (float)backbuffer_size.x / (float)backbuffer_size.y, 1.0f, 1000.0f);
@@ -92,25 +117,44 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		struct matrix_4x4 camera_projection = mat44_mul_mat34(&perspective_mat, &camera_mat);
 
 		/* World space */
-		//struct matrix_3x4 rot_mat = mat34_get_rotation_z(rot);
 		struct matrix_3x4 rot_mat = mat34_get_rotation_y(DEG_TO_RAD(40.0f));
 		struct matrix_3x4 world_transform = mat34_mul_mat34(&trans_mat, &rot_mat);
-		struct matrix_3x4 world_transform2 = mat34_mul_mat34(&trans_mat2, &rot_mat);
-
 		struct matrix_4x4 final_transform = mat44_mul_mat34(&camera_projection, &world_transform);
-		struct matrix_4x4 final_transform2 = mat44_mul_mat34(&camera_projection, &world_transform2);
-
 		for (unsigned int i = 0; i < sizeof(vert_buf) / sizeof(vert_buf[0]); ++i)
-		{
 			final_vert_buf[i] = mat44_mul_vec3(&final_transform, &vert_buf[i]);
-			final_vert_buf2[i] = mat44_mul_vec3(&final_transform2, &vert_buf[i]);
-		}
-		
+
+		/* A function for this stuff would be nice */
+		rot_mat = mat34_get_rotation_y(DEG_TO_RAD(38.0f));
+		world_transform = mat34_mul_mat34(&trans_mat2, &rot_mat);
+		final_transform = mat44_mul_mat34(&camera_projection, &world_transform);
+		for (unsigned int i = 0; i < sizeof(vert_buf) / sizeof(vert_buf[0]); ++i)
+			final_vert_buf2[i] = mat44_mul_vec3(&final_transform, &vert_buf[i]);
+
+		rot_mat = mat34_get_rotation_y(DEG_TO_RAD(30.0f));
+		world_transform = mat34_mul_mat34(&trans_mat_large, &rot_mat);
+		final_transform = mat44_mul_mat34(&camera_projection, &world_transform);
+		for (unsigned int i = 0; i < sizeof(vert_buf_large) / sizeof(vert_buf_large[0]); ++i)
+			final_vert_buf_large[i] = mat44_mul_vec3(&final_transform, &vert_buf_large[i]);
+
+		rot_mat = mat34_get_rotation_y(DEG_TO_RAD(-45.0f));
+		world_transform = mat34_mul_mat34(&trans_mat_large2, &rot_mat);
+		final_transform = mat44_mul_mat34(&camera_projection, &world_transform);
+		for (unsigned int i = 0; i < sizeof(vert_buf_large) / sizeof(vert_buf_large[0]); ++i)
+			final_vert_buf_large2[i] = mat44_mul_vec3(&final_transform, &vert_buf_large[i]);
+
+		world_transform = mat34_mul_mat34(&trans_mat_large3, &rot_mat);
+		final_transform = mat44_mul_mat34(&camera_projection, &world_transform);
+		for (unsigned int i = 0; i < sizeof(vert_buf_large) / sizeof(vert_buf_large[0]); ++i)
+			final_vert_buf_large3[i] = mat44_mul_vec3(&final_transform, &vert_buf_large[i]);
+
 		rasterizer_clear_depth_buffer(depth_buf, &backbuffer_size);
 
 		uint64_t raster_duration = get_time();
 		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf[0], &uv[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]), texture_data, texture_size);
 		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf2[0], &uv[0], &ind_buf[0], sizeof(ind_buf) / sizeof(ind_buf[0]), texture_data, texture_size);
+		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf_large[0], &uv_large[0], &ind_buf_large[0], sizeof(ind_buf_large) / sizeof(ind_buf_large[0]), texture_data, texture_size);
+		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf_large2[0], &uv_large[0], &ind_buf_large[0], sizeof(ind_buf_large) / sizeof(ind_buf_large[0]), texture_data, texture_size);
+		rasterizer_rasterize(get_backbuffer(renderer_info), depth_buf, &backbuffer_size, &final_vert_buf_large3[0], &uv_large[0], &ind_buf_large[0], sizeof(ind_buf_large) / sizeof(ind_buf_large[0]), texture_data, texture_size);
 		raster_duration = get_time() - raster_duration;
 
 		/* Stat rendering should be easy to disable/modify,
@@ -158,6 +202,36 @@ void handle_input(struct api_info *api_info, float dt, struct vec3_float *camera
 		camera_trans->z += camera_speed * dt;
 	else if (is_key_down(api_info, KEY_S))
 		camera_trans->z -= camera_speed * dt;
+}
+
+void generate_large_test_buffers(const struct vec3_float *vert_buf_box, const struct vec2_float *uv_box, const unsigned int *ind_buf_box,
+                                 struct vec3_float *out_vert_buf, struct vec2_float *out_uv, unsigned int *out_ind_buf, const struct vec3_float *box_offsets, const unsigned int box_count_out)
+{
+	assert(vert_buf_box && "generate_large_test_buffers: vert_buf_box is NULL");
+	assert(uv_box && "generate_large_test_buffers: uv_box is NULL");
+	assert(ind_buf_box && "generate_large_test_buffers: ind_buf_box is NULL");
+	assert(out_vert_buf && "generate_large_test_buffers: out_vert_buf is NULL");
+	assert(out_uv && "generate_large_test_buffers: uv_out is NULL");
+	assert(out_ind_buf && "generate_large_test_buffers: ind_buf_out is NULL");
+	assert(box_offsets && "generate_large_test_buffers: box_offsets is NULL");
+
+	/* Generates a something horrible, but I just need a a bit larger vert buffer for testing */
+	struct matrix_3x4 trans_mat;
+	
+	for (unsigned int box = 0; box < box_count_out; ++box)
+	{
+		trans_mat = mat34_get_translation(&(box_offsets[box]));
+		for (unsigned int i = 0; i < 8; ++i)
+		{
+			unsigned int vert_ind = box * 8 + i;
+			out_vert_buf[vert_ind] = mat34_mul_vec3(&trans_mat, &(vert_buf_box[i]));
+			out_uv[vert_ind] = uv_box[i];
+		}
+		for (unsigned int i = 0; i < 36; ++i)
+		{
+			out_ind_buf[box * 36 + i] = ind_buf_box[i] + box * 8;
+		}
+	}
 }
 
 void render_stats(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size)
