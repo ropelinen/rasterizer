@@ -37,7 +37,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 	texture_get_info(texture, &texture_data, &texture_size);
 
-	struct font *font = font_create("Rockwell.ttf");
+	struct font *font = font_create("Tuffy.ttf");
 	if (!font)
 		error_popup("Failed to initialize the font", false);
 
