@@ -6,6 +6,7 @@
 #include "software_rasterizer/demo/texture.h"
 #include "software_rasterizer/rasterizer.h"
 
+#define VERTS_IN_BOX 14
 #define LARGE_VERT_BUF_BOXES 8
 
 void handle_input(struct api_info *api_info, float dt, struct vec3_float *camera_trans);
@@ -26,7 +27,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	assert(api_info && "main: api_info is NULL");
 	assert(renderer_info && "main: renderer_info is NULL");
 
-	struct texture *texture = texture_create("brick_base.png");
+	struct texture *texture = texture_create("crate.png");
 	if (!texture)
 		error_popup("Failed to load the texture", true);
 
@@ -46,27 +47,31 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	struct stats *stats = stats_create(STAT_COUNT, 1000, true);
 	unsigned int stabilizing_delay = 500;
 
-	/* Test tri, CCW */
-	struct vec3_float vert_buf[8] = { { .x = -2.0f, .y = 2.0f, .z = -2.0f }, { .x = -2.0f, .y = -2.0f, .z = -2.0f },
-	                                  { .x = 2.0f, .y = 2.0f, .z = -2.0f }, { .x = 2.0f, .y = -2.0f, .z = -2.0f },
-									  { .x = -2.0f, .y = 2.0f, .z = 2.0f }, { .x = -2.0f, .y = -2.0f, .z = 2.0f },
-									  { .x = 2.0f, .y = 2.0f, .z = 2.0f }, { .x = 2.0f, .y = -2.0f, .z = 2.0f } };
-	struct vec4_float final_vert_buf[8];
-	struct vec4_float final_vert_buf2[8];
-	struct vec2_float uv[8] = { { .x = 0.0f, .y = 0.0f }, { .x = 0.0f, .y = 1.0f }, { .x = 1.0f, .y = 0.0f }, { .x = 1.0f, .y = 1.0f }
-							  , { .x = 1.0f, .y = 0.0f }, { .x = 1.0f, .y = 1.0f }, { .x = 0.0f, .y = 0.0f }, { .x = 0.0f, .y = 1.0f } };
-	unsigned int ind_buf[36] = { 0, 1, 3, 3, 2, 0 /* front */
-	                           , 0, 2, 4, 4, 2, 6 /* top */ 
-	                           , 1, 5, 3, 3, 5, 7 /* bottom */
-	                           , 0, 4, 5, 5, 1, 0 /* left */
-	                           , 2, 3, 7, 7, 6, 2 /* right */
-	                           , 6, 7, 5, 5, 4, 6 }; /* back */
+	/* Test box, CCW */
+	struct vec3_float vert_buf[VERTS_IN_BOX] = { { .x = -2.0f, .y = 2.0f, .z = 2.0f }, { .x = -2.0f, .y = -2.0f, .z = 2.0f }, { .x = -2.0f, .y = 2.0f, .z = 2.0f },
+	                                   { .x = -2.0f, .y = 2.0f, .z = -2.0f }, { .x = -2.0f, .y = -2.0f, .z = -2.0f }, { .x = -2.0f, .y = -2.0f, .z = 2.0f },
+	                                   { .x = 2.0f, .y = 2.0f, .z = 2.0f }, { .x = 2.0f, .y = 2.0f, .z = -2.0f }, { .x = 2.0f, .y = -2.0f, .z = -2.0f },
+	                                   { .x = 2.0f, .y = -2.0f, .z = 2.0f }, { .x = 2.0f, .y = 2.0f, .z = 2.0f }, { .x = 2.0f, .y = -2.0f, .z = 2.0f },
+	                                   { .x = -2.0f, .y = 2.0f, .z = 2.0f }, { .x = -2.0f, .y = -2.0f, .z = 2.0f } };
+	struct vec4_float final_vert_buf[VERTS_IN_BOX];
+	struct vec4_float final_vert_buf2[VERTS_IN_BOX];
 
-	struct vec3_float vert_buf_large[8 * LARGE_VERT_BUF_BOXES];
-	struct vec4_float final_vert_buf_large[8 * LARGE_VERT_BUF_BOXES];
-	struct vec4_float final_vert_buf_large2[8 * LARGE_VERT_BUF_BOXES];
-	struct vec4_float final_vert_buf_large3[8 * LARGE_VERT_BUF_BOXES];
-	struct vec2_float uv_large[8 * LARGE_VERT_BUF_BOXES];
+	struct vec2_float uv[VERTS_IN_BOX] = { { .x = 0.0f, .y = 0.33f }, { .x = 0.0f, .y = 0.66f }, { .x = 0.25f, .y = 0.0f }, { .x = 0.25f, .y = 0.33f },
+	                             { .x = 0.25f, .y = 0.66f }, { .x = 0.25f, .y = 1.0f }, { .x = 0.5f, .y = 0.0f }, { .x = 0.5f, .y = 0.33f }, 
+	                             { .x = 0.5f, .y = 0.66f }, { .x = 0.5f, .y = 1.0f }, { .x = 0.75f, .y = 0.33f }, { .x = 0.75f, .y = 0.66f }, 
+	                             { .x = 1.0f, .y = 0.33f }, { .x = 1.0f, .y = 0.66f } };
+	unsigned int ind_buf[36] = { 3, 4, 7, 7, 4, 8 /* front */
+	                           , 2, 3, 6, 6, 3, 7 /* top */
+	                           , 4, 5, 8, 8, 5, 9 /* bottom */
+	                           , 0, 1, 3, 3, 1, 4 /* left */
+	                           , 7, 8, 10, 10, 8, 11 /* right */
+	                           , 10, 11, 12, 12, 11, 13 }; /* back */
+
+	struct vec3_float vert_buf_large[VERTS_IN_BOX * LARGE_VERT_BUF_BOXES];
+	struct vec4_float final_vert_buf_large[VERTS_IN_BOX * LARGE_VERT_BUF_BOXES];
+	struct vec4_float final_vert_buf_large2[VERTS_IN_BOX * LARGE_VERT_BUF_BOXES];
+	struct vec4_float final_vert_buf_large3[VERTS_IN_BOX * LARGE_VERT_BUF_BOXES];
+	struct vec2_float uv_large[VERTS_IN_BOX * LARGE_VERT_BUF_BOXES];
 	unsigned int ind_buf_large[36 * LARGE_VERT_BUF_BOXES];
 	struct vec3_float box_offsets[LARGE_VERT_BUF_BOXES] = { { .x = -6.0f, .y = 6.0f, .z = 6.0f }, { .x = 2.0f, .y = 4.0f, .z = 6.0f }, { .x = -2.0f, .y = -2.0f, .z = 2.0f }, { .x = 0.0f, .y = 0.0f, .z = 0.0f },
 	                                                        { .x = -6.0f, .y = 2.0f, .z = -2.0f }, { .x = -4.0f, .y = -4.0f, .z = -8.0f }, { .x = 4.0f, .y = 6.0f, .z = -6.0f }, { .x = 2.0f, .y = 10.0f, .z = -8.0f } };
@@ -221,15 +226,15 @@ void generate_large_test_buffers(const struct vec3_float *vert_buf_box, const st
 	for (unsigned int box = 0; box < box_count_out; ++box)
 	{
 		trans_mat = mat34_get_translation(&(box_offsets[box]));
-		for (unsigned int i = 0; i < 8; ++i)
+		for (unsigned int i = 0; i < VERTS_IN_BOX; ++i)
 		{
-			unsigned int vert_ind = box * 8 + i;
+			unsigned int vert_ind = box * VERTS_IN_BOX + i;
 			out_vert_buf[vert_ind] = mat34_mul_vec3(&trans_mat, &(vert_buf_box[i]));
 			out_uv[vert_ind] = uv_box[i];
 		}
 		for (unsigned int i = 0; i < 36; ++i)
 		{
-			out_ind_buf[box * 36 + i] = ind_buf_box[i] + box * 8;
+			out_ind_buf[box * 36 + i] = ind_buf_box[i] + box * VERTS_IN_BOX;
 		}
 	}
 }
