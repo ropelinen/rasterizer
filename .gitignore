@@ -30,6 +30,5 @@
 
 # Debug files
 *.dSYM/
-/bin/
 /lib/
 /obj/
