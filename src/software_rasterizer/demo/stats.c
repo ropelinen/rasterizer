@@ -61,7 +61,7 @@ bool stats_profiling_run_complete(const struct stats *stats)
 	assert(stats && "stats_profiling_run_complete: stats is NULL");
 	assert(stats->profiling_run && "stats_profiling_run_complete: The stats are not defined as a profiling run");
 
-	return  stats->profiling_run && stats->current_index >= stats->frames_in_buffer;
+	return stats->profiling_run && stats->current_index >= stats->frames_in_buffer;
 }
 
 void update_sorted(uint32_t *data, unsigned int data_size, const uint32_t new_val, const uint32_t prev_val)
@@ -79,6 +79,8 @@ void update_sorted(uint32_t *data, unsigned int data_size, const uint32_t new_va
 	}
 
 	assert(index != ~0U && "update_sorted: prev_val not found");
+	if (index == ~0U)
+		return;
 
 	/* Should sort these from smallest to largest instead. (remember to change get percentile func too. */
 	if (new_val > prev_val)
