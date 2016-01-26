@@ -150,6 +150,185 @@ void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, co
 	assert(out_clipuv->y >= 0.0f && out_clipuv->y <= 1.0f && "lerp_vert_attributes: Invalid interpolated v");
 }
 
+/* Handles viewport and guard-band clipping.
+ * Returns true when the triangle(s) should be rasterized, 
+ * false if it/they can be discarded. */
+bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_float *work_uv, 
+	unsigned int *work_vert_count, unsigned int *work_index_count, unsigned int *work_poly_indices,
+	const struct vec2_int *target_size)
+{
+	assert(work_poly && "clip: work_poly is NULL");
+	assert(work_z && "clip: work_z is NULL");
+	assert(work_w && "clip: work_w is NULL");
+	assert(work_uv && "clip: work_uv is NULL");
+	assert(work_vert_count && "clip: work_vert_count is NULL");
+	assert(work_index_count && "clip: work_index_count is NULL");
+	assert(work_poly_indices && "clip: work_poly_indices is NULL");
+	assert(target_size && "clip: target_size is NULL");
+
+	const int32_t sub_multip = 1 << SUB_BITS;
+	const int32_t half_width = target_size->x / 2;
+	const int32_t half_height = target_size->y / 2;
+	const int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
+	const int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
+
+	/* Test view port x, y clipping */
+	uint32_t oc0 = compute_out_code(&work_poly[0], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
+	uint32_t oc1 = compute_out_code(&work_poly[1], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
+	uint32_t oc2 = compute_out_code(&work_poly[2], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
+	if ((oc0 | oc1 | oc2) == 0)
+	{
+		/* Whole poly inside the view, trivially accept */
+		return true;
+	}
+	else if (oc0 & oc1 & oc2)
+	{
+		/* All points in the same outside region, trivially reject */
+		return false;
+	}
+	else
+	{
+		/* Test guard band clipping */
+		const int32_t minx = TO_FIXED(GB_MIN, sub_multip);
+		const int32_t miny = TO_FIXED(GB_MIN, sub_multip);
+		const int32_t maxx = TO_FIXED(GB_MAX, sub_multip);
+		const int32_t maxy = TO_FIXED(GB_MAX, sub_multip);
+
+		oc0 = compute_out_code(&work_poly[0], minx, miny, maxx, maxy);
+		oc1 = compute_out_code(&work_poly[1], minx, miny, maxx, maxy);
+		oc2 = compute_out_code(&work_poly[2], minx, miny, maxx, maxy);
+
+		if ((oc0 | oc1 | oc2) == 0)
+		{
+			/* Whole poly inside the guard band, trivially accept */
+			return true;
+		}
+		else if (oc0 & oc1 & oc2)
+		{
+			/* Partially inside the view port and not inside the guard band?? */
+			assert(false && "rasterizer_rasterize: Poly can't be partailly in view and wholly outside the guard band simultaneously.");
+			return false;
+		}
+		else
+		{
+			/* Sutherland–Hodgman algorithm */
+
+			/* We use indices to create a closed convex polygon.
+			* Closed as in same first and last vertex. */
+			*work_index_count = 4;
+			work_poly_indices[3] = 0;
+
+			unsigned int clipped_vert_count = 0;
+			struct vec2_int clipped_poly[7];
+			float clipped_z[7];
+			float clipped_w[7];
+			struct vec2_float clipped_uv[7];
+			unsigned int clipped_index_count = 0;
+			unsigned int clipped_poly_indices[15];
+
+			/* Loop all edges */
+			unsigned int oc_codes[4] = { OC_LEFT, OC_BOTTOM, OC_RIGHT, OC_TOP };
+			for (unsigned int oc_index = 0; oc_index < 4; ++oc_index)
+			{
+				unsigned int oc = oc_codes[oc_index];
+				clipped_vert_count = 0;
+				clipped_index_count = 0;
+				for (unsigned int vert_index = 0; vert_index < *work_index_count - 1; ++vert_index)
+				{
+					if ((compute_out_code(&work_poly[work_poly_indices[vert_index]], minx, miny, maxx, maxy) & oc) == 0)
+					{
+						if ((compute_out_code(&work_poly[work_poly_indices[vert_index + 1]], minx, miny, maxx, maxy) & oc) == 0)
+						{
+							/* both inside, add second */
+							clipped_poly[clipped_vert_count] = work_poly[work_poly_indices[vert_index + 1]];
+							clipped_z[clipped_vert_count] = work_z[work_poly_indices[vert_index + 1]];
+							clipped_w[clipped_vert_count] = work_w[work_poly_indices[vert_index + 1]];
+							clipped_uv[clipped_vert_count] = work_uv[work_poly_indices[vert_index + 1]];
+							clipped_poly_indices[clipped_index_count] = clipped_vert_count;
+							++clipped_vert_count;
+							++clipped_index_count;
+						}
+						else
+						{
+							/* second out, add intersection */
+							clipped_poly[clipped_vert_count] = get_gb_intersection_point(oc, &work_poly[work_poly_indices[vert_index]], &work_poly[work_poly_indices[vert_index + 1]]);
+							clipped_poly_indices[clipped_index_count] = clipped_vert_count;
+
+							lerp_vert_attributes(&work_poly[0], &work_z[0], &work_w[0], &work_uv[0], work_poly_indices[vert_index], work_poly_indices[vert_index + 1]
+								, &clipped_poly[clipped_vert_count], &clipped_z[clipped_vert_count], &clipped_w[clipped_vert_count], &clipped_uv[clipped_vert_count]);
+
+							++clipped_vert_count;
+							++clipped_index_count;
+						}
+					}
+					else
+					{
+						if ((compute_out_code(&work_poly[work_poly_indices[vert_index + 1]], minx, miny, maxx, maxy) & oc) == 0)
+						{
+							/* second in, add intersection and second */
+							clipped_poly[clipped_vert_count] = get_gb_intersection_point(oc, &work_poly[work_poly_indices[vert_index + 1]], &work_poly[work_poly_indices[vert_index]]);
+							clipped_poly_indices[clipped_index_count] = clipped_vert_count;
+
+							lerp_vert_attributes(&work_poly[0], &work_z[0], &work_w[0], &work_uv[0], work_poly_indices[vert_index + 1], work_poly_indices[vert_index]
+								, &clipped_poly[clipped_vert_count], &clipped_z[clipped_vert_count], &clipped_w[clipped_vert_count], &clipped_uv[clipped_vert_count]);
+
+							++clipped_vert_count;
+							++clipped_index_count;
+
+							clipped_poly[clipped_vert_count] = work_poly[work_poly_indices[vert_index + 1]];
+							clipped_z[clipped_vert_count] = work_z[work_poly_indices[vert_index + 1]];
+							clipped_w[clipped_vert_count] = work_w[work_poly_indices[vert_index + 1]];
+							clipped_uv[clipped_vert_count] = work_uv[work_poly_indices[vert_index + 1]];
+							clipped_poly_indices[clipped_index_count] = clipped_vert_count;
+							++clipped_vert_count;
+							++clipped_index_count;
+						}
+					}
+				}
+				/* Make sure we have a closed poly */
+				clipped_poly_indices[clipped_index_count] = 0;
+				++clipped_index_count;
+
+				assert(clipped_vert_count < 7 && "rasterizer_rasterize: too many vertices in the clipped poly");
+
+				*work_vert_count = clipped_vert_count;
+				for (unsigned int j = 0; j < *work_vert_count; ++j)
+				{
+					work_poly[j] = clipped_poly[j];
+					work_z[j] = clipped_z[j];
+					work_w[j] = clipped_w[j];
+					work_uv[j] = clipped_uv[j];
+				}
+
+				*work_index_count = clipped_index_count;
+				for (unsigned int j = 0; j < *work_index_count; ++j)
+					work_poly_indices[j] = clipped_poly_indices[j];
+			}
+
+			--(*work_index_count);
+
+			/* Need to generate proper index list */
+			unsigned int temp_ind_buf[15];
+			unsigned int temp_ind_count = 0;
+			for (unsigned int vert_index = 1; vert_index < *work_index_count - 1; ++vert_index)
+			{
+				temp_ind_buf[temp_ind_count] = work_poly_indices[0];
+				temp_ind_buf[temp_ind_count + 1] = work_poly_indices[vert_index];
+				temp_ind_buf[temp_ind_count + 2] = work_poly_indices[vert_index + 1];
+				temp_ind_count += 3;
+			}
+			for (unsigned int j = 0; j < temp_ind_count; ++j)
+				work_poly_indices[j] = temp_ind_buf[j];
+
+			*work_index_count = temp_ind_count;
+			assert(*work_index_count < 15 && "rasterizer_rasterize: too many indices in the clipped poly");
+			assert(*work_index_count % 3 == 0 && "rasterizer_rasterize: clipped index count is invalid");
+
+			return true;
+		}
+	}
+}
+
 void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const struct vec2_int *target_size, 
 	const struct vec4_float *vert_buf, const struct vec2_float *uv_buf, const unsigned int *ind_buf, const unsigned int index_count, 
 	uint32_t *texture, struct vec2_int *texture_size)
@@ -189,10 +368,10 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 			vert_buf[ind_buf[i + 2]].z < 0.0f || vert_buf[ind_buf[i + 2]].z > vert_buf[ind_buf[i + 2]].w)
 			continue;
 
-		int32_t half_width = target_size->x / 2;
-		int32_t half_height = target_size->y / 2;
-		int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
-		int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
+		const int32_t half_width = target_size->x / 2;
+		const int32_t half_height = target_size->y / 2;
+		const int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
+		const int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
 
 		work_poly[0].x = TO_FIXED(vert_buf[ind_buf[i]].x / vert_buf[ind_buf[i]].w * half_width, sub_multip);
 		work_poly[0].y = TO_FIXED(vert_buf[ind_buf[i]].y / vert_buf[ind_buf[i]].w * half_height, sub_multip);
@@ -214,157 +393,9 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 		work_uv[1] = uv_buf[ind_buf[i + 1]];
 		work_uv[2] = uv_buf[ind_buf[i + 2]];
 
-		/* Test view port x, y clipping */
-		uint32_t oc0 = compute_out_code(&work_poly[0], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
-		uint32_t oc1 = compute_out_code(&work_poly[1], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
-		uint32_t oc2 = compute_out_code(&work_poly[2], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
-		if ((oc0 | oc1 | oc2) == 0) 
-		{ 
-			/* Whole poly inside the view, trivially accept */
-		}
-		else if (oc0 & oc1 & oc2) 
-		{
-			/* All points in the same outside region, trivially reject */
+		if (!clip(&(work_poly[0]), &(work_z[0]), &(work_w[0]), &(work_uv[0]),
+			&work_vert_count, &work_index_count, &(work_poly_indices[0]), target_size))
 			continue;
-		}
-		else
-		{
-			/* Test guard band clipping */
-			const int32_t minx = TO_FIXED(GB_MIN, sub_multip);
-			const int32_t miny = TO_FIXED(GB_MIN, sub_multip);
-			const int32_t maxx = TO_FIXED(GB_MAX, sub_multip);
-			const int32_t maxy = TO_FIXED(GB_MAX, sub_multip);
-
-			oc0 = compute_out_code(&work_poly[0], minx, miny, maxx, maxy);
-			oc1 = compute_out_code(&work_poly[1], minx, miny, maxx, maxy);
-			oc2 = compute_out_code(&work_poly[2], minx, miny, maxx, maxy);
-
-			if ((oc0 | oc1 | oc2) == 0)
-			{
-				/* Whole poly inside the guard band, trivially accept */
-			}
-			else if (oc0 & oc1 & oc2)
-			{
-				/* Partially inside the view port and not inside the guard band?? */
-				assert(false && "rasterizer_rasterize: Poly can't be partailly in view and wholly outside the guard band simultaneously.");
-				continue;
-			}
-			else
-			{
-				/* Sutherland–Hodgman algorithm */
-
-				/* We use indices to create a closed convex polygon.
-				 * Closed as in same first and last vertex. */
-				work_index_count = 4;
-				work_poly_indices[3] = 0;
-
-				unsigned int clipped_vert_count = 0;
-				struct vec2_int clipped_poly[7];
-				float clipped_z[7];
-				float clipped_w[7];
-				struct vec2_float clipped_uv[7];
-				unsigned int clipped_index_count = 0;
-				unsigned int clipped_poly_indices[15];
-
-				/* Loop all edges */
-				unsigned int oc_codes[4] = { OC_LEFT, OC_BOTTOM, OC_RIGHT, OC_TOP };
-				for (unsigned int oc_index = 0; oc_index < 4; ++oc_index)
-				{
-					unsigned int oc = oc_codes[oc_index];
-					clipped_vert_count = 0;
-					clipped_index_count = 0;
-					for (unsigned int vert_index = 0; vert_index < work_index_count - 1; ++vert_index)
-					{
-						if ((compute_out_code(&work_poly[work_poly_indices[vert_index]], minx, miny, maxx, maxy) & oc) == 0)
-						{
-							if ((compute_out_code(&work_poly[work_poly_indices[vert_index + 1]], minx, miny, maxx, maxy) & oc) == 0)
-							{
-								/* both inside, add second */
-								clipped_poly[clipped_vert_count] = work_poly[work_poly_indices[vert_index + 1]];
-								clipped_z[clipped_vert_count] = work_z[work_poly_indices[vert_index + 1]];
-								clipped_w[clipped_vert_count] = work_w[work_poly_indices[vert_index + 1]];
-								clipped_uv[clipped_vert_count] = work_uv[work_poly_indices[vert_index + 1]];
-								clipped_poly_indices[clipped_index_count] = clipped_vert_count;
-								++clipped_vert_count;
-								++clipped_index_count;
-							}
-							else
-							{
-								/* second out, add intersection */
-								clipped_poly[clipped_vert_count] = get_gb_intersection_point(oc, &work_poly[work_poly_indices[vert_index]], &work_poly[work_poly_indices[vert_index + 1]]);
-								clipped_poly_indices[clipped_index_count] = clipped_vert_count;
-
-								lerp_vert_attributes(&work_poly[0], &work_z[0], &work_w[0], &work_uv[0], work_poly_indices[vert_index], work_poly_indices[vert_index + 1]
-									, &clipped_poly[clipped_vert_count], &clipped_z[clipped_vert_count], &clipped_w[clipped_vert_count], &clipped_uv[clipped_vert_count]);
-
-								++clipped_vert_count;
-								++clipped_index_count;
-							}
-						}
-						else
-						{
-							if ((compute_out_code(&work_poly[work_poly_indices[vert_index + 1]], minx, miny, maxx, maxy) & oc) == 0)
-							{
-								/* second in, add intersection and second */
-								clipped_poly[clipped_vert_count] = get_gb_intersection_point(oc, &work_poly[work_poly_indices[vert_index + 1]], &work_poly[work_poly_indices[vert_index]]);
-								clipped_poly_indices[clipped_index_count] = clipped_vert_count;
-
-								lerp_vert_attributes(&work_poly[0], &work_z[0], &work_w[0], &work_uv[0], work_poly_indices[vert_index + 1], work_poly_indices[vert_index]
-									, &clipped_poly[clipped_vert_count], &clipped_z[clipped_vert_count], &clipped_w[clipped_vert_count], &clipped_uv[clipped_vert_count]);
-
-								++clipped_vert_count;
-								++clipped_index_count;
-
-								clipped_poly[clipped_vert_count] = work_poly[work_poly_indices[vert_index + 1]];
-								clipped_z[clipped_vert_count] = work_z[work_poly_indices[vert_index + 1]];
-								clipped_w[clipped_vert_count] = work_w[work_poly_indices[vert_index + 1]];
-								clipped_uv[clipped_vert_count] = work_uv[work_poly_indices[vert_index + 1]];
-								clipped_poly_indices[clipped_index_count] = clipped_vert_count;
-								++clipped_vert_count;
-								++clipped_index_count;
-							}
-						}
-					}
-					/* Make sure we have a closed poly */
-					clipped_poly_indices[clipped_index_count] = 0;
-					++clipped_index_count;
-					
-					assert(clipped_vert_count < 7 && "rasterizer_rasterize: too many vertices in the clipped poly");
-
-					work_vert_count = clipped_vert_count;
-					for (unsigned int j = 0; j < work_vert_count; ++j)
-					{
-						work_poly[j] = clipped_poly[j];
-						work_z[j] = clipped_z[j];
-						work_w[j] = clipped_w[j];
-						work_uv[j] = clipped_uv[j];
-					}
-
-					work_index_count = clipped_index_count;
-					for (unsigned int j = 0; j < work_index_count; ++j)
-						work_poly_indices[j] = clipped_poly_indices[j];
-				}
-
-				--work_index_count;
-
-				/* Need to generate proper index list */
-				unsigned int temp_ind_buf[15];
-				unsigned int temp_ind_count = 0;
-				for (unsigned int vert_index = 1; vert_index < work_index_count - 1; ++vert_index)
-				{
-					temp_ind_buf[temp_ind_count] = work_poly_indices[0];
-					temp_ind_buf[temp_ind_count + 1] = work_poly_indices[vert_index];
-					temp_ind_buf[temp_ind_count + 2] = work_poly_indices[vert_index + 1];
-					temp_ind_count += 3;
-				}
-				for (unsigned int j = 0; j < temp_ind_count; ++j)
-					work_poly_indices[j] = temp_ind_buf[j];
-
-				work_index_count = temp_ind_count;
-				assert(work_index_count < 15 && "rasterizer_rasterize: too many indices in the clipped poly");
-				assert(work_index_count % 3 == 0 && "rasterizer_rasterize: clipped index count is invalid");
-			}
-		}		
 
 		for (unsigned ind_i = 0; ind_i < work_index_count; ind_i += 3)
 		{
