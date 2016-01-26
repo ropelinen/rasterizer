@@ -5,7 +5,7 @@
 
 #include <math.h>
 
-float mat32_get_det(const struct matrix_3x4 *mat)
+float mat34_get_det(const struct matrix_3x4 *mat)
 {
 	assert(mat && "mat34_get_det: mat is NULL");
 
@@ -24,7 +24,7 @@ struct matrix_3x4 mat34_get_inverse(const struct matrix_3x4 *mat)
 {
 	assert(mat && "mat34_get_inverse: mat is NULL");
 
-	float det = mat32_get_det(mat);
+	float det = mat34_get_det(mat);
 	assert(det && "mat34_get_inverse: determinant is 0");
 
 	const float(*m)[3][4] = &(mat->mat);
