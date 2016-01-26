@@ -119,9 +119,8 @@ void renderer_initialize(struct renderer_info *info, unsigned int width, unsigne
 	const size_t buffer_size = width * height * 4;
 	info->buffer = malloc(buffer_size);
 	memset(info->buffer, 0, buffer_size);
-	/* Should just call renderer_clear_backbuffer */
-	for (unsigned i = 0; i < buffer_size / 4; ++i)
-		((int*)info->buffer)[i] = RGB_RED;
+	
+	renderer_clear_backbuffer(info, RGB_RED);
 #endif
 }
 
@@ -268,6 +267,8 @@ uint8_t get_virtual_key_code(enum keycodes keycode)
 
 bool is_key_down(struct api_info *api_info, enum keycodes keycode)
 {
+	assert(api_info && "is_key_down: api_info is NULL");
+
 	uint8_t vkc = get_virtual_key_code(keycode);
 	return (api_info->key_states[vkc / KEY_STATE_TYPE_BITS] & (1 << (vkc % KEY_STATE_TYPE_BITS))) != 0;
 }
