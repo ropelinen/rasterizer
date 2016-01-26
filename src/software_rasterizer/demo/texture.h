@@ -8,7 +8,6 @@ struct texture *texture_create(const char *file_name);
 
 void texture_destroy(struct texture **texture);
 
-/* Just create a stryct vec2_int texture_get_size func */
 void texture_get_info(struct texture *texture, uint32_t **buf, struct vec2_int **size);
 
 #endif /* RPLNN_TEXTURE_H */
