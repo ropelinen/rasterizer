@@ -20,7 +20,7 @@ void render_stat_line_ms(struct stats *stats, struct font *font, void *render_ta
 void render_stat_line_mus(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size,
                           const char *stat_name, const unsigned char stat_id, const int row_y, const int stat_name_x, const int first_val_x, const int x_increment);
 
-/* A genereic platform independent main function.
+/* A generic platform independent main function.
  * See osal.c for platform specific main. */
 void main(struct api_info *api_info, struct renderer_info *renderer_info)
 {
@@ -31,18 +31,18 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	if (!texture)
 		error_popup("Failed to load the texture", true);
 
-	/* Fix this :D */
-	uint32_t *texture_data;
-	struct vec2_int *texture_size;
+	uint32_t *texture_data = NULL;
+	struct vec2_int *texture_size = NULL;
 
 	texture_get_info(texture, &texture_data, &texture_size);
+	if (!texture_data || !texture_size)
+		error_popup("Couldn't get texture info", true);
 
 	struct font *font = font_create("Tuffy.ttf");
-	if (!font)
-		error_popup("Failed to initialize the font", false);
-
 	if (font)
 		font_set_line_height(font, 19);
+	else
+		error_popup("Failed to initialize the font", false);
 
 	struct stats *stats = stats_create(STAT_COUNT, 1000, true);
 	unsigned int stabilizing_delay = 500;
@@ -164,14 +164,14 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
-		if (font && stats_profiling_run_complete(stats))
+		if (stats && font && stats_profiling_run_complete(stats))
 			render_stats(stats, font, get_backbuffer(renderer_info), &backbuffer_size);
 
 		finish_drawing(api_info);
 
 		uint64_t frame_end = get_time();
 		frame_time_mus = (uint32_t)get_time_microseconds(frame_end - frame_start);
-		if (stabilizing_delay == 0)
+		if (stats && stabilizing_delay == 0)
 		{
 			stats_update_stat(stats, STAT_FRAME, frame_time_mus);
 			stats_update_stat(stats, STAT_BLIT, get_blit_duration_ms(renderer_info));
@@ -184,7 +184,9 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 	free(depth_buf);
 
-	stats_destroy(&stats);
+	if (stats)
+		stats_destroy(&stats);
+	
 	if (font)
 		font_destroy(&font);
 
@@ -216,8 +218,8 @@ void generate_large_test_buffers(const struct vec3_float *vert_buf_box, const st
 	assert(uv_box && "generate_large_test_buffers: uv_box is NULL");
 	assert(ind_buf_box && "generate_large_test_buffers: ind_buf_box is NULL");
 	assert(out_vert_buf && "generate_large_test_buffers: out_vert_buf is NULL");
-	assert(out_uv && "generate_large_test_buffers: uv_out is NULL");
-	assert(out_ind_buf && "generate_large_test_buffers: ind_buf_out is NULL");
+	assert(out_uv && "generate_large_test_buffers: out_uv is NULL");
+	assert(out_ind_buf && "generate_large_test_buffers: out_ind_buf is NULL");
 	assert(box_offsets && "generate_large_test_buffers: box_offsets is NULL");
 
 	/* Generates a something horrible, but I just need a a bit larger vert buffer for testing */
@@ -276,7 +278,7 @@ void render_stats(struct stats *stats, struct font *font, void *render_target, s
 	render_stat_line_mus(stats, font, render_target, target_size, "blit (mus):", STAT_BLIT, INFO_ROW_Y + ROW_Y_INCREMENT * 3, STAT_COLUMN_X, FIRST_VAL_COLUMN_X, COLUMN_X_INCREMENT);
 
 #undef STAT_COLUMN_X
-#undef FIRS_VAL_COLUMN_X
+#undef FIRST_VAL_COLUMN_X
 #undef COLUMN_X_INCREMENT
 #undef INFO_ROW_Y
 #undef ROW_Y_INCREMENT
@@ -285,10 +287,11 @@ void render_stats(struct stats *stats, struct font *font, void *render_target, s
 void render_stat_line_ms(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size,
                          const char *stat_name, const unsigned char stat_id, const int row_y, const int stat_name_x, const int first_val_x, const int x_increment)
 {
-	assert(stats && "render_stats: stats is NULL");
-	assert(font && "render_stats: font is NULL");
-	assert(render_target && "render_stats: render_target is NULL");
-	assert(target_size && "render_stats: target_size is NULL");
+	assert(stats && "render_stat_line_ms: stats is NULL");
+	assert(font && "render_stat_line_ms: font is NULL");
+	assert(render_target && "render_stat_line_ms: render_target is NULL");
+	assert(target_size && "render_stat_line_ms: target_size is NULL");
+	assert(stat_name && "render_stat_line_ms: stat_name is NULL");
 
 	struct vec2_int pos;
 	pos.x = stat_name_x;
@@ -323,10 +326,11 @@ void render_stat_line_ms(struct stats *stats, struct font *font, void *render_ta
 void render_stat_line_mus(struct stats *stats, struct font *font, void *render_target, struct vec2_int *target_size,
                           const char *stat_name, const unsigned char stat_id, const int row_y, const int stat_name_x, const int first_val_x, const int x_increment)
 {
-	assert(stats && "render_stats: stats is NULL");
-	assert(font && "render_stats: font is NULL");
-	assert(render_target && "render_stats: render_target is NULL");
-	assert(target_size && "render_stats: target_size is NULL");
+	assert(stats && "render_stat_line_mus: stats is NULL");
+	assert(font && "render_stat_line_mus: font is NULL");
+	assert(render_target && "render_stat_line_mus: render_target is NULL");
+	assert(target_size && "render_stat_line_mus: target_size is NULL");
+	assert(stat_name && "render_stat_line_mus: stat_name is NULL");
 
 	struct vec2_int pos;
 	pos.x = stat_name_x;
