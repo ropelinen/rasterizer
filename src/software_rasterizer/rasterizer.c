@@ -104,8 +104,8 @@ struct vec2_int get_gb_intersection_point(const unsigned int oc, const struct ve
 	return result;
 }
 
-void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, const float *w_arr, const struct vec2_float *uv_arr, unsigned int p0i, unsigned int p1i
-	, const struct vec2_int *clip, float *out_clipz, float *out_clipw, struct vec2_float *out_clipuv)
+void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, const float *w_arr, const struct vec2_float *uv_arr, unsigned int p0i, unsigned int p1i, 
+	const struct vec2_int *clip, float *out_clipz, float *out_clipw, struct vec2_float *out_clipuv)
 {
 	assert(vec_arr && "lerp_vert_attributes: vec_arr is NULL");
 	assert(z_arr && "lerp_vert_attributes: z_arr is NULL");
@@ -150,7 +150,9 @@ void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, co
 	assert(out_clipuv->y >= 0.0f && out_clipuv->y <= 1.0f && "lerp_vert_attributes: Invalid interpolated v");
 }
 
-void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const struct vec2_int *target_size, const struct vec4_float *vert_buf, const struct vec2_float *uv_buf, const unsigned int *ind_buf, const unsigned int index_count, uint32_t *texture, struct vec2_int *texture_size)
+void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const struct vec2_int *target_size, 
+	const struct vec4_float *vert_buf, const struct vec2_float *uv_buf, const unsigned int *ind_buf, const unsigned int index_count, 
+	uint32_t *texture, struct vec2_int *texture_size)
 {
 	assert(render_target && "rasterizer_rasterize: render_target is NULL");
 	assert(depth_buf && "rasterizer_rasterize: depth_buf is NULL");
