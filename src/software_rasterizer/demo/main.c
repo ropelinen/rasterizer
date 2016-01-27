@@ -6,6 +6,7 @@
 #include "software_rasterizer/demo/texture.h"
 #include "software_rasterizer/rasterizer.h"
 
+//#define USE_THREADING 1
 #define VERTS_IN_BOX 14
 #define LARGE_VERT_BUF_BOXES 8
 
@@ -131,11 +132,19 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		rasterizer_clear_depth_buffer(depth_buf, &backbuffer_size);
 
 		uint64_t raster_duration = get_time();
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &final_vert_buf[0], &uv[0], &ind_buf[0], ind_buf_size, texture_data, texture_size);
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &final_vert_buf2[0], &uv[0], &ind_buf[0], ind_buf_size, texture_data, texture_size);
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &final_vert_buf_large[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &final_vert_buf_large2[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &final_vert_buf_large3[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
+#ifdef USE_THREADING
+
+#else
+		const struct vec2_int area_min = { .x = 0, .y = 0 };
+		struct vec2_int area_max;
+		area_max.x = backbuffer_size.x - 1;
+		area_max.y = backbuffer_size.y - 1;
+		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf[0], &uv[0], &ind_buf[0], ind_buf_size, texture_data, texture_size);
+		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf2[0], &uv[0], &ind_buf[0], ind_buf_size, texture_data, texture_size);
+		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf_large[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
+		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf_large2[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
+		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf_large3[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
+#endif
 		raster_duration = get_time() - raster_duration;
 
 		/* Stat rendering should be easy to disable/modify,
