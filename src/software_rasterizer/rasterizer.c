@@ -155,7 +155,7 @@ void lerp_vert_attributes(const struct vec2_int* vec_arr, const float *z_arr, co
  * false if it/they can be discarded. */
 bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_float *work_uv, 
 	unsigned int *work_vert_count, unsigned int *work_index_count, unsigned int *work_poly_indices,
-	const struct vec2_int *target_size)
+	const struct vec2_int *target_min, const struct vec2_int *target_max)
 {
 	assert(work_poly && "clip: work_poly is NULL");
 	assert(work_z && "clip: work_z is NULL");
@@ -164,18 +164,14 @@ bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_
 	assert(work_vert_count && "clip: work_vert_count is NULL");
 	assert(work_index_count && "clip: work_index_count is NULL");
 	assert(work_poly_indices && "clip: work_poly_indices is NULL");
-	assert(target_size && "clip: target_size is NULL");
-
-	const int32_t sub_multip = 1 << SUB_BITS;
-	const int32_t half_width = target_size->x / 2;
-	const int32_t half_height = target_size->y / 2;
-	const int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
-	const int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
+	assert(target_min && "clip: target_min is NULL");
+	assert(target_max && "clip: target_max is NULL");
+	assert(target_min->x < target_max->x && target_min->y < target_max->y && "clip: target_min must be smaller than target_max");
 
 	/* Test view port x, y clipping */
-	uint32_t oc0 = compute_out_code(&work_poly[0], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
-	uint32_t oc1 = compute_out_code(&work_poly[1], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
-	uint32_t oc2 = compute_out_code(&work_poly[2], -half_width_sub, -half_height_sub, half_width_sub - sub_multip, half_height_sub - sub_multip);
+	uint32_t oc0 = compute_out_code(&work_poly[0], target_min->x, target_min->y, target_max->x, target_max->y);
+	uint32_t oc1 = compute_out_code(&work_poly[1], target_min->x, target_min->y, target_max->x, target_max->y);
+	uint32_t oc2 = compute_out_code(&work_poly[2], target_min->x, target_min->y, target_max->x, target_max->y);
 	if ((oc0 | oc1 | oc2) == 0)
 	{
 		/* Whole poly inside the view, trivially accept */
@@ -189,6 +185,7 @@ bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_
 	else
 	{
 		/* Test guard band clipping */
+		const int32_t sub_multip = 1 << SUB_BITS;
 		const int32_t minx = TO_FIXED(GB_MIN, sub_multip);
 		const int32_t miny = TO_FIXED(GB_MIN, sub_multip);
 		const int32_t maxx = TO_FIXED(GB_MAX, sub_multip);
@@ -329,13 +326,15 @@ bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_
 	}
 }
 
-void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const struct vec2_int *target_size, 
+void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const struct vec2_int *target_size, const struct vec2_int *rasterize_area_min, const struct vec2_int *rasterize_area_max,
 	const struct vec4_float *vert_buf, const struct vec2_float *uv_buf, const unsigned int *ind_buf, const unsigned int index_count, 
 	uint32_t *texture, struct vec2_int *texture_size)
 {
 	assert(render_target && "rasterizer_rasterize: render_target is NULL");
 	assert(depth_buf && "rasterizer_rasterize: depth_buf is NULL");
 	assert(target_size && "rasterizer_rasterize: target_size is NULL");
+	assert(rasterize_area_min && "rasterizer_rasterize: rasterize_area_min is NULL");
+	assert(rasterize_area_max && "rasterizer_rasterize: rasterize_area_max is NULL");
 	assert(vert_buf && "rasterizer_rasterize: vert_buf is NULL");
 	assert(uv_buf && "rasterizer_rasterize: uv_buf is NULL");
 	assert(ind_buf && "rasterizer_rasterize: ind_buf is NULL");
@@ -344,6 +343,9 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 	assert(index_count % 3 == 0 && "rasterizer_rasterize: index count is not valid");
 	assert(SUB_BITS == 4 && "rasterizer_rasterize: SUB_BITS has changed, check the assert below.");
 	assert(target_size->x <= (2 * -(GB_MIN)) && target_size->y <= (2 * -(GB_MIN)) && "rasterizer_rasterize: render target is too large");
+	assert(rasterize_area_min->x >= 0 && rasterize_area_min->y >= 0 && "rasterizer_rasterize: invalid rasterize_area_min");
+	assert(rasterize_area_max->x < target_size->x && rasterize_area_max->y < target_size->y && "rasterizer_rasterize: invalid rasterize_are_max");
+	assert(rasterize_area_min->x < rasterize_area_max->x && rasterize_area_min->y < rasterize_area_max->y && "rasterizer_rasterize: rasterize_area_min must be smaller than rasterize_area_max");
 
 	/* Sub-pixel constants */
 	const int32_t sub_multip = 1 << SUB_BITS;
@@ -370,8 +372,12 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 
 		const int32_t half_width = target_size->x / 2;
 		const int32_t half_height = target_size->y / 2;
-		const int32_t half_width_sub = TO_FIXED(half_width, sub_multip);
-		const int32_t half_height_sub = TO_FIXED(half_height, sub_multip);
+		struct vec2_int rast_min;
+		rast_min.x = TO_FIXED(rasterize_area_min->x - half_width, sub_multip); 
+		rast_min.y = TO_FIXED(rasterize_area_min->y - half_height, sub_multip);
+		struct vec2_int rast_max; 
+		rast_max.x = TO_FIXED(rasterize_area_max->x - half_width, sub_multip);
+		rast_max.y = TO_FIXED(rasterize_area_max->y - half_height, sub_multip);
 
 		work_poly[0].x = TO_FIXED(vert_buf[ind_buf[i]].x / vert_buf[ind_buf[i]].w * half_width, sub_multip);
 		work_poly[0].y = TO_FIXED(vert_buf[ind_buf[i]].y / vert_buf[ind_buf[i]].w * half_height, sub_multip);
@@ -394,7 +400,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 		work_uv[2] = uv_buf[ind_buf[i + 2]];
 
 		if (!clip(&(work_poly[0]), &(work_z[0]), &(work_w[0]), &(work_uv[0]),
-			&work_vert_count, &work_index_count, &(work_poly_indices[0]), target_size))
+			&work_vert_count, &work_index_count, &(work_poly_indices[0]), &rast_min, &rast_max))
 			continue;
 
 		for (unsigned ind_i = 0; ind_i < work_index_count; ind_i += 3)
@@ -412,10 +418,10 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 			max.y = max3(work_poly[i0].y, work_poly[i1].y, work_poly[i2].y);
 
 			/* Clip to screen and round to pixel centers */
-			min.x = (max(min.x, -half_width_sub) & ~sub_mask) + half_pixel;
-			min.y = (max(min.y, -half_height_sub) & ~sub_mask) + half_pixel;
-			max.x = ((min(max.x, half_width_sub - sub_multip) + sub_mask) & ~sub_mask) + half_pixel;
-			max.y = ((min(max.y, half_height_sub - sub_multip) + sub_mask) & ~sub_mask) + half_pixel;
+			min.x = (max(min.x, rast_min.x) & ~sub_mask) + half_pixel;
+			min.y = (max(min.y, rast_min.y) & ~sub_mask) + half_pixel;
+			max.x = ((min(max.x, rast_max.x) + sub_mask) & ~sub_mask) + half_pixel;
+			max.y = ((min(max.y, rast_max.y) + sub_mask) & ~sub_mask) + half_pixel;
 
 			/* Orient at min point
 			 * The top or left bias causes the weights to get offset by 1 sub-pixel.
