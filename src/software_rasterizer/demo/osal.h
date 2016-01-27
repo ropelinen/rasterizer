@@ -24,6 +24,8 @@ void renderer_clear_backbuffer(struct renderer_info *info, const uint32_t color)
 uint64_t get_time(void);
 uint64_t get_time_microseconds(const uint64_t time);
 
+unsigned int get_logical_core_count(void);
+
 bool uint64_to_string(const uint64_t value, char *buffer, const size_t buffer_size);
 bool float_to_string(const float value, char *buffer, const size_t buffer_size);
 

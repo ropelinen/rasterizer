@@ -219,6 +219,34 @@ uint64_t get_time_microseconds(const uint64_t time)
 	return microseconds;
 }
 
+unsigned int get_logical_core_count(void)
+{
+	/* from https://msdn.microsoft.com/en-us/library/ms684139%28v=vs.85%29.aspx */
+	//IsWow64Process is not available on all supported versions of Windows.
+	//Use GetModuleHandle to get a handle to the DLL that contains the function
+	//and GetProcAddress to get a pointer to the function if available.
+	typedef BOOL(WINAPI *LPFN_ISWOW64PROCESS) (HANDLE, PBOOL);
+	LPFN_ISWOW64PROCESS IsWow64 = (LPFN_ISWOW64PROCESS)GetProcAddress(GetModuleHandle(TEXT("kernel32")), "IsWow64Process");
+
+	BOOL is_wow64 = false;
+	if (IsWow64)
+	{
+		if (!IsWow64(GetCurrentProcess(), &is_wow64))
+		{
+			error_popup("Couldn't get wow64 information, assuming single core system", false);
+			return 1;
+		}
+	}
+
+	SYSTEM_INFO sys_info;
+	if (is_wow64)
+		GetNativeSystemInfo(&sys_info);
+	else
+		GetSystemInfo(&sys_info);
+
+	return sys_info.dwNumberOfProcessors;
+}
+
 bool uint64_to_string(const uint64_t value, char *buffer, const size_t buffer_size)
 {
 	return (_ui64toa_s(value, buffer, buffer_size, 10) == 0);
