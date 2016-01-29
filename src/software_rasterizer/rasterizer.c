@@ -328,7 +328,7 @@ bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_
 
 void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const struct vec2_int *target_size, const struct vec2_int *rasterize_area_min, const struct vec2_int *rasterize_area_max,
 	const struct vec4_float *vert_buf, const struct vec2_float *uv_buf, const unsigned int *ind_buf, const unsigned int index_count, 
-	uint32_t *texture, struct vec2_int *texture_size)
+	const uint32_t *texture, const struct vec2_int *texture_size)
 {
 	assert(render_target && "rasterizer_rasterize: render_target is NULL");
 	assert(depth_buf && "rasterizer_rasterize: depth_buf is NULL");
