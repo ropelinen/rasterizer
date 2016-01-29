@@ -37,13 +37,13 @@ struct api_info
 
 struct thread
 {
-	HANDLE handle;
-	DWORD id;
 	CRITICAL_SECTION data_critical_section;
 	CRITICAL_SECTION doing_task_critical_section;
+	HANDLE handle;
 	HANDLE sleep_semaphore; 
 	void (*func)(void *);
 	void *data;
+	DWORD id;
 	bool quit;
 };
 
