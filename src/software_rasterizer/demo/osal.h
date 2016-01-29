@@ -29,6 +29,16 @@ unsigned int get_logical_core_count(void);
 bool uint64_to_string(const uint64_t value, char *buffer, const size_t buffer_size);
 bool float_to_string(const float value, char *buffer, const size_t buffer_size);
 
+/* Threading */
+struct thread;
+/* Negative value means any core will do */
+struct thread *thread_create(const int core_id);
+void thread_destroy(struct thread **thread);
+bool thread_set_task(struct thread *thread, void(*func)(void *), void *data);
+bool thread_has_task(struct thread *thread);
+void thread_wait_for_task(struct thread *thread);
+
+/* Input */
 bool is_key_down(struct api_info *api_info, enum keycodes keycode);
 
 enum keycodes

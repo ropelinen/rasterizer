@@ -35,6 +35,18 @@ struct api_info
 	struct renderer_info *renderer_info;
 };
 
+struct thread
+{
+	HANDLE handle;
+	DWORD id;
+	CRITICAL_SECTION data_critical_section;
+	CRITICAL_SECTION doing_task_critical_section;
+	HANDLE sleep_semaphore; 
+	void (*func)(void *);
+	void *data;
+	bool quit;
+};
+
 LPCWSTR class_name = TEXT("TestClass");
 LPCWSTR window_name = TEXT("Rasterizer");
 static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -257,6 +269,195 @@ bool float_to_string(const float value, char *buffer, const size_t buffer_size)
 	return snprintf(buffer, buffer_size, "%.3f", value) < (int)buffer_size;
 }
 
+DWORD WINAPI thread_func(LPVOID lpParam)
+{
+	struct thread *me = (struct thread *)lpParam;
+
+	while(true)
+	{
+		/* When there is nothing to do just wait here.
+		 * We'll be signaled when a task is added. */
+		if (WaitForSingleObject(me->sleep_semaphore, INFINITE) == WAIT_FAILED)
+		{
+			assert(false && "thread_func: WaitForSingleObject in thread loop failed, killing the thread");
+			return GetLastError();
+		}
+
+		EnterCriticalSection(&me->doing_task_critical_section);
+		EnterCriticalSection(&me->data_critical_section);
+		if (me->quit)
+		{
+			LeaveCriticalSection(&me->data_critical_section);
+			LeaveCriticalSection(&me->doing_task_critical_section);
+			return 0;
+		}
+		void(*func)(void *) = me->func; 
+		void *data = me->data;
+		LeaveCriticalSection(&me->data_critical_section);
+		
+		if (func)
+		{
+			(*func)(data);
+
+			EnterCriticalSection(&me->data_critical_section);
+			me->func = NULL;
+			me->data = NULL;
+			LeaveCriticalSection(&me->data_critical_section);
+		}
+		else
+		{
+			assert(false && "Some one woke up the thread without a task when not quitting, shouldn't happen");
+		}
+
+		LeaveCriticalSection(&me->doing_task_critical_section);
+	}
+
+	return 0;
+}
+
+struct thread *thread_create(const int core_id)
+{
+	struct thread *thread = malloc(sizeof(struct thread));
+
+	thread->sleep_semaphore = CreateSemaphore(NULL, 0, 100, NULL);
+	if (!thread->sleep_semaphore)
+	{
+		assert(false && "thread_create: failed to create has_tasks semaphore");
+		free(thread);
+		return NULL;
+	}
+
+	thread->func = NULL;
+	thread->data = NULL;
+	thread->quit = false;
+
+	thread->handle = CreateThread(NULL, 0, &thread_func, thread, 0, &thread->id);
+	if (!thread->handle)
+	{
+		CloseHandle(thread->sleep_semaphore);
+		free(thread);
+		return NULL;
+	}
+
+	if (core_id >= 0 && !SetThreadAffinityMask(thread->handle, (DWORD_PTR)(1 << core_id)))
+	{
+		assert(false && "thread_create: failed to set the desired core");
+		thread->quit = true;
+
+		if (!ReleaseSemaphore(thread->sleep_semaphore, 1, NULL))
+		{
+			assert(false && "thread_create: failed to release the sleep semaphore, trying to terminate the thread");
+			TerminateThread(thread->handle, GetLastError());
+		}
+		WaitForSingleObject(thread->handle, INFINITE);
+		CloseHandle(thread->sleep_semaphore);
+		CloseHandle(thread->handle);
+		free(thread);
+
+		return NULL;
+	}
+
+	InitializeCriticalSectionAndSpinCount(&thread->data_critical_section, 0x00000400);
+	InitializeCriticalSectionAndSpinCount(&thread->doing_task_critical_section, 0x00000400);
+
+	return thread;
+}
+
+void thread_destroy(struct thread **thread)
+{
+	assert(thread && "thread_destroy: thread is NULL");
+	assert(*thread && "thread_destroy: *thread is NULL");
+	assert((*thread)->handle && "thread_destroy: (*thread)->handle is NULL");
+	assert((*thread)->sleep_semaphore && "thread_destroy: (*thread)->sleep_semaphore is NULL");
+
+	EnterCriticalSection(&(*thread)->data_critical_section);
+	(*thread)->quit = true;
+	LeaveCriticalSection(&(*thread)->data_critical_section);
+
+	if (!ReleaseSemaphore((*thread)->sleep_semaphore, 1, NULL))
+	{
+		assert(false && "thread_destroy: failed to release the sleep semaphore, trying to terminate the thread");
+		TerminateThread((*thread)->handle, GetLastError());
+	}
+	WaitForSingleObject((*thread)->handle, INFINITE);
+
+	CloseHandle((*thread)->handle);
+	DeleteCriticalSection(&(*thread)->data_critical_section);
+	DeleteCriticalSection(&(*thread)->doing_task_critical_section);
+	CloseHandle((*thread)->sleep_semaphore);
+
+	free(*thread);
+}
+
+bool thread_set_task(struct thread *thread, void(*func)(void *), void *data)
+{
+	assert(thread && "thread_set_task: thread is NULL");
+	assert(func && "thread_set_task: func is NULL");
+
+	bool success = true;
+	EnterCriticalSection(&thread->data_critical_section);
+	assert(!thread->quit && "thread_set_task: thread is quitting/has quit");
+	if (thread->func || thread->quit)
+	{
+		success = false;
+	}
+	else
+	{
+		thread->func = func;
+		thread->data = data;
+	}
+	LeaveCriticalSection(&thread->data_critical_section);
+
+	if (success)
+	{
+		if (!ReleaseSemaphore(thread->sleep_semaphore, 1, NULL))
+		{
+			assert(false && "thread_set_task: Failed to release the sleep semaphore, the task won't be run");
+			EnterCriticalSection(&thread->data_critical_section);
+			thread->func = NULL;
+			thread->data = NULL;
+			LeaveCriticalSection(&thread->data_critical_section);
+			return false;
+		}
+	}
+
+	return success;
+}
+
+bool thread_has_task(struct thread *thread)
+{
+	assert(thread && "thread_in_task: thread is NULL");
+
+	bool has_task;
+	EnterCriticalSection(&thread->data_critical_section);
+	has_task = thread->func;
+	LeaveCriticalSection(&thread->data_critical_section);
+
+	return has_task;
+}
+
+void thread_wait_for_task(struct thread *thread)
+{
+	assert(thread && "thread_in_task: thread is NULL");
+
+	if (!thread_has_task(thread))
+	{
+		/* If the thread doesn't have a task function set we can just get out here */
+		return;
+	}
+
+	EnterCriticalSection(&thread->doing_task_critical_section);
+	LeaveCriticalSection(&thread->doing_task_critical_section);
+
+	/* If this function is called immediately after setting the task there is a small chance that
+	 * the thread has not got far enough to enter doing_task_critical_section.
+	 * This loop fixes that as the task is removed after completion. */
+	while(thread_has_task(thread))
+	{
+		Sleep(0);
+	}
+}
+
 static const uint8_t keycode_table[KEY_COUNT] = 
 { 
 	0x41, /* A */
@@ -357,6 +558,9 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 #pragma warning(disable : 4100) /* unreferenced formal parameter */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
+	if (!SetProcessAffinityMask(GetCurrentProcess(), (1 << get_logical_core_count()) - 1))
+		error_popup("Failed to set process affinity mask, threading might not work properly", false);
+
 	struct renderer_info renderer_info;
 #if RPLNN_RENDERER == RPLNN_RENDERER_GDI
 	renderer_info.buffer = NULL;
