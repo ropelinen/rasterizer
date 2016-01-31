@@ -6,9 +6,32 @@
 #include "software_rasterizer/demo/texture.h"
 #include "software_rasterizer/rasterizer.h"
 
-//#define USE_THREADING 1
+#define USE_THREADING 1
 #define VERTS_IN_BOX 14
 #define LARGE_VERT_BUF_BOXES 8
+
+#ifdef USE_THREADING
+struct thread_data
+{
+	uint32_t *back_buffer;
+	uint32_t *depth_buffer;
+	struct vec2_int target_size;
+	struct vec2_int raster_area_min;
+	struct vec2_int raster_area_max;
+	struct vec4_float **vert_bufs;
+	struct vec2_float **uv_bufs;
+	unsigned int **ind_bufs;
+	unsigned int *ind_counts;
+	uint32_t **textures;
+	struct vec2_int **texture_sizes;
+	uint32_t buffer_count;
+};
+
+void thread_data_init(struct thread_data *data, const uint32_t buffer_count);
+void thread_data_deinit(struct thread_data *data);
+void thread_data_calculate_areas(struct thread_data *data, const unsigned int core_count, const struct vec2_int *backbuffer_size);
+void rasterize_thread(void *data);
+#endif
 
 void transform_vertices(const struct vec3_float *in_verts, struct vec4_float *out_verts, unsigned int vert_count,
                      struct matrix_3x4 *translation, struct matrix_3x4 *rotation, struct matrix_4x4 *camera_projection);
@@ -85,7 +108,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	translation.x += 10.0f; translation.y += 18.0f; translation.z += 50.0f;
 	struct matrix_3x4 trans_mat_large3 = mat34_get_translation(&translation);
 
-	void *back_buffer = get_backbuffer(renderer_info);
+	uint32_t *back_buffer = get_backbuffer(renderer_info);
 	if (!back_buffer)
 		error_popup("Couldn't get back buffer", true);
 
@@ -96,6 +119,61 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 	uint32_t frame_time_mus = 0;
 	uint64_t frame_start = get_time();
+
+#ifdef USE_THREADING
+	const unsigned int core_count = get_logical_core_count();
+	struct thread **threads = malloc(sizeof(struct thread *) * core_count);
+	struct thread_data *thread_data = malloc(sizeof(struct thread_data) * core_count);
+
+	/* Not a good way to do this.
+	 * Should try to pass only the relevant vertex info to the thread.
+	 * Would be relatively easy if I had the verts in some data structure suitable for occlusion culling. */
+	for (unsigned int i = 0; i < core_count; ++i)
+	{
+		threads[i] = thread_create(i);
+		thread_data_init(&thread_data[i], 5);
+		thread_data[i].back_buffer = back_buffer;
+		thread_data[i].depth_buffer = depth_buf;
+		thread_data[i].target_size = backbuffer_size;
+
+		thread_data[i].vert_bufs[0] = &final_vert_buf[0];
+		thread_data[i].uv_bufs[0] = &uv[0];
+		thread_data[i].ind_bufs[0] = &ind_buf[0];
+		thread_data[i].ind_counts[0] = ind_buf_size;
+		thread_data[i].textures[0] = &texture_data[0];
+		thread_data[i].texture_sizes[0] = texture_size;
+
+		thread_data[i].vert_bufs[1] = &final_vert_buf2[0];
+		thread_data[i].uv_bufs[1] = &uv[0];
+		thread_data[i].ind_bufs[1] = &ind_buf[0];
+		thread_data[i].ind_counts[1] = ind_buf_size;
+		thread_data[i].textures[1] = &texture_data[0];
+		thread_data[i].texture_sizes[1] = texture_size;
+
+		thread_data[i].vert_bufs[2] = &final_vert_buf_large[0];
+		thread_data[i].uv_bufs[2] = &uv_large[0];
+		thread_data[i].ind_bufs[2] = &ind_buf_large[0];
+		thread_data[i].ind_counts[2] = ind_buf_large_size;
+		thread_data[i].textures[2] = &texture_data[0];
+		thread_data[i].texture_sizes[2] = texture_size;
+
+		thread_data[i].vert_bufs[3] = &final_vert_buf_large2[0];
+		thread_data[i].uv_bufs[3] = &uv_large[0];
+		thread_data[i].ind_bufs[3] = &ind_buf_large[0];
+		thread_data[i].ind_counts[3] = ind_buf_large_size;
+		thread_data[i].textures[3] = &texture_data[0];
+		thread_data[i].texture_sizes[3] = texture_size;
+
+		thread_data[i].vert_bufs[4] = &final_vert_buf_large3[0];
+		thread_data[i].uv_bufs[4] = &uv_large[0];
+		thread_data[i].ind_bufs[4] = &ind_buf_large[0];
+		thread_data[i].ind_counts[4] = ind_buf_large_size;
+		thread_data[i].textures[4] = &texture_data[0];
+		thread_data[i].texture_sizes[4] = texture_size;
+	}
+
+	thread_data_calculate_areas(thread_data, core_count, &backbuffer_size);
+#endif
 
 	while (event_loop())
 	{
@@ -133,7 +211,11 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 		uint64_t raster_duration = get_time();
 #ifdef USE_THREADING
+		for (unsigned int i = 0; i < core_count; ++i)
+			thread_set_task(threads[i], &rasterize_thread, &thread_data[i]);
 
+		for (unsigned int i = 0; i < core_count; ++i)
+			thread_wait_for_task(threads[i]);
 #else
 		const struct vec2_int area_min = { .x = 0, .y = 0 };
 		struct vec2_int area_max;
@@ -166,6 +248,16 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 		frame_start = frame_end;
 	}
+
+#ifdef USE_THREADING
+	for (unsigned int i = 0; i < core_count; ++i)
+	{
+		thread_destroy(&threads[i]);
+		thread_data_deinit(&thread_data[i]);
+	}
+	free(threads);
+	free(thread_data);
+#endif
 
 	free(depth_buf);
 
@@ -418,3 +510,69 @@ void render_stat_line_mus(struct stats *stats, struct font *font, void *render_t
 	if (uint64_to_string((uint64_t)stats_get_stat_percentile(stats, stat_id, 99.0f), str, 10))
 		font_render_text(render_target, target_size, font, str, &pos, 0);
 }
+
+#ifdef USE_THREADING
+void thread_data_init(struct thread_data *data, const uint32_t buffer_count)
+{
+	assert(data && "thread_data_init: data is NULL");
+
+	data->buffer_count = buffer_count;
+	data->vert_bufs = malloc(sizeof(struct vec4_float *) * buffer_count);
+	data->uv_bufs = malloc(sizeof(struct vec2_float *) * buffer_count);
+	data->ind_bufs = malloc(sizeof(unsigned int *) * buffer_count);
+	data->ind_counts = malloc(sizeof(unsigned int) * buffer_count);
+	data->textures = malloc(sizeof(uint32_t *) * buffer_count);
+	data->texture_sizes = malloc(sizeof(struct vec2_int *) * buffer_count);
+}
+
+void thread_data_deinit(struct thread_data *data)
+{
+	assert(data && "thread_data_destroy: data is NULL");
+
+	free(data->vert_bufs);
+	free(data->uv_bufs);
+	free(data->ind_bufs);
+	free(data->ind_counts);
+	free(data->textures);
+	free(data->texture_sizes);
+}
+
+void thread_data_calculate_areas(struct thread_data *data, const unsigned int core_count, const struct vec2_int *backbuffer_size)
+{
+	assert(data && "thread_data_calculate_areas: data is NULL");
+	assert(backbuffer_size && "thread_data_calculate_areas: backbuffer_size is NULL");
+
+	unsigned int columns = core_count / 2;
+	unsigned int width = backbuffer_size->x / columns;
+	unsigned int i;
+	for (i = 0; i < columns; ++i)
+	{
+		data[i].raster_area_min.x = i * width;
+		data[i].raster_area_max.x = i == columns - 1 ? backbuffer_size->x - 1 : i * width + width - 1;
+		data[i].raster_area_min.y = 0;
+		data[i].raster_area_max.y = backbuffer_size->y / 2;
+	}
+
+	columns = core_count - columns;
+	for (unsigned int j = 0; i < core_count; ++i, ++j)
+	{
+		data[i].raster_area_min.x = j * width;
+		data[i].raster_area_max.x = i == core_count - 1 ? backbuffer_size->x - 1 : j * width + width - 1;
+		data[i].raster_area_min.y = backbuffer_size->y / 2 + 1;
+		data[i].raster_area_max.y = backbuffer_size->y - 1;
+	}
+}
+
+void rasterize_thread(void *data)
+{
+	assert(data && "thread_func: data is NULL");
+
+	struct thread_data *td = (struct thread_data *)data;
+	for (unsigned int i = 0; i < td->buffer_count; ++i)
+	{
+		rasterizer_rasterize(td->back_buffer, td->depth_buffer, &td->target_size, &td->raster_area_min, &td->raster_area_max,
+			&td->vert_bufs[i][0], &td->uv_bufs[i][0], &td->ind_bufs[i][0], td->ind_counts[i],
+			td->textures[i], td->texture_sizes[i]);
+	}
+}
+#endif
