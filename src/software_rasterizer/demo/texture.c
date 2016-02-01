@@ -46,6 +46,7 @@ void texture_destroy(struct texture **texture)
 
 	free((*texture)->buf);
 	free(*texture);
+	*texture = NULL;
 }
 
 void texture_get_info(struct texture *texture, uint32_t **buf, struct vec2_int **size)
