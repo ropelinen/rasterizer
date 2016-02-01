@@ -387,6 +387,7 @@ void thread_destroy(struct thread **thread)
 	CloseHandle((*thread)->sleep_semaphore);
 
 	free(*thread);
+	*thread = NULL;
 }
 
 bool thread_set_task(struct thread *thread, void(*func)(void *), void *data)
