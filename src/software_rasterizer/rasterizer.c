@@ -452,7 +452,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 			uv20.x = work_uv[i2].x * work_w[i2] - work_uv[i0].x * work_w[i0];
 			uv20.y = work_uv[i2].y * work_w[i2] - work_uv[i0].y * work_w[i0];
 
-			float double_tri_area = (float)winding_2d(&work_poly[i0], &work_poly[i1], &work_poly[i2]);
+			float one_over_double_area = 1.0f / (float)winding_2d(&work_poly[i0], &work_poly[i1], &work_poly[i2]);
 
 			/* How we calculate and step this is based on the format of the backbuffer.
 			 * Instead of trying to support what ever the blitter uses should just require some specific format (goes also for color format).
@@ -476,8 +476,8 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 				{
 					if ((w0 | w1 | w2) >= 0)
 					{
-						float w0_f = min((float)w0 / double_tri_area, 1.0f);
-						float w1_f = min((float)w1 / double_tri_area, 1.0f);
+						float w0_f = min((float)w0 * one_over_double_area, 1.0f);
+						float w1_f = min((float)w1 * one_over_double_area, 1.0f);
 						float w2_f = max(1.0f - w0_f - w1_f, 0.0f);
 
 						uint32_t z = (uint32_t)((work_z[i0] + (w1_f * z10) + (w2_f * z20)) * (1 << DEPTH_BITS));
