@@ -51,6 +51,7 @@ void font_destroy(struct font **font)
 
 	free((*font)->buffer);
 	free(*font);
+	*font = NULL;
 }
 
 void font_set_line_height(struct font *font, float line_height)
