@@ -462,6 +462,9 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 				* ((target_size->y - 1) - (((min.y - half_pixel) / sub_multip) + half_height)) /* y */
 				+ (((min.x - half_pixel) / sub_multip) + half_width); /* x */
 
+			const float tex_coor_x_max = (float)(texture_size->x - 1);
+			const float tex_coor_y_max = (float)(texture_size->y - 1);
+
 			/* Rasterize */
 			struct vec2_int point;
 			for (point.y = min.y; point.y <= max.y; point.y += sub_multip)
@@ -493,7 +496,9 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 							float v = uv0.y + (w1_f * uv10.y) + (w2_f * uv20.y);
 							v /= interp_w;
 
-							const unsigned int texture_index = (unsigned)((texture_size->y - 1) * v) * (unsigned)texture_size->x + (unsigned)((texture_size->x - 1) * u);
+							const unsigned int texture_index = (unsigned)(tex_coor_y_max * v)
+								* (unsigned)texture_size->x 
+								+ (unsigned)(tex_coor_x_max * u);
 							assert(pixel_index < (unsigned)(target_size->x * target_size->y) && "rasterizer_rasterize: invalid pixel_index");
 							assert(texture_index < (unsigned)(texture_size->x * texture_size->y) && "rasterizer_rasterize: invalid texture_index");
 							render_target[pixel_index] = texture[texture_index];
