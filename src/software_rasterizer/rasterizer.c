@@ -5,6 +5,11 @@
 
 #include "software_rasterizer/vector.h"
 
+/* Allows rasterization in 2x2 blocks.
+ * Currently slower than the normal one pixel at a time version,
+ * but is meant to be ground work for a SIMD implementation. */
+//#define RASTER_BLOCKS
+
 /* 4 sub bits gives us [-2048, 2047] max render target.
  * It should be possible to get something similar out of 8 sub bits. */
 #define SUB_BITS 4
@@ -372,10 +377,11 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 
 		const int32_t half_width = target_size->x / 2;
 		const int32_t half_height = target_size->y / 2;
+
 		struct vec2_int rast_min;
-		rast_min.x = TO_FIXED(rasterize_area_min->x - half_width, sub_multip); 
+		rast_min.x = TO_FIXED(rasterize_area_min->x - half_width, sub_multip);
 		rast_min.y = TO_FIXED(rasterize_area_min->y - half_height, sub_multip);
-		struct vec2_int rast_max; 
+		struct vec2_int rast_max;
 		rast_max.x = TO_FIXED(rasterize_area_max->x - half_width, sub_multip);
 		rast_max.y = TO_FIXED(rasterize_area_max->y - half_height, sub_multip);
 
@@ -418,10 +424,17 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 			max.y = max3(work_poly[i0].y, work_poly[i1].y, work_poly[i2].y);
 
 			/* Clip to screen and round to pixel centers */
+#ifdef RASTER_BLOCKS
+			min.x = ((max(min.x, rast_min.x) & ~sub_mask) & ~sub_multip) + half_pixel;
+			min.y = ((max(min.y, rast_min.y) & ~sub_mask) & ~sub_multip) + half_pixel;
+			max.x = (((min(max.x, rast_max.x) + sub_mask) & ~sub_mask) | sub_multip) + half_pixel;
+			max.y = (((min(max.y, rast_max.y) + sub_mask) & ~sub_mask) | sub_multip) + half_pixel;
+#else
 			min.x = (max(min.x, rast_min.x) & ~sub_mask) + half_pixel;
 			min.y = (max(min.y, rast_min.y) & ~sub_mask) + half_pixel;
 			max.x = ((min(max.x, rast_max.x) + sub_mask) & ~sub_mask) + half_pixel;
 			max.y = ((min(max.y, rast_max.y) + sub_mask) & ~sub_mask) + half_pixel;
+#endif
 
 			/* Orient at min point
 			 * The top or left bias causes the weights to get offset by 1 sub-pixel.
@@ -466,6 +479,121 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 			const float tex_coor_y_max = (float)(texture_size->y - 1);
 
 			/* Rasterize */
+#ifdef RASTER_BLOCKS
+			const uint32_t step_size = 2 * sub_multip;
+
+			int32_t point_x[4];
+			int32_t point_y[4];
+			point_y[0] = min.y; point_y[1] = min.y;
+			point_y[2] = min.y + sub_multip; point_y[3] = min.y + sub_multip;
+			for (; point_y[0] <= max.y; point_y[0] += step_size, point_y[1] += step_size, point_y[2] += step_size, point_y[3] += step_size)
+			{
+				int32_t w0[4];
+				w0[0] = w0_row; w0[1] = w0_row + step_x_12;
+				w0[2] = w0_row + step_y_12; w0[3] = w0_row + step_y_12 + step_x_12;
+				int32_t w1[4];
+				w1[0] = w1_row; w1[1] = w1_row + step_x_20;
+				w1[2] = w1_row + step_y_20; w1[3] = w1_row + step_y_20 + step_x_20;
+				int32_t w2[4];
+				w2[0] = w2_row; w2[1] = w2_row + step_x_01;
+				w2[2] = w2_row + step_y_01; w2[3] = w2_row + step_y_01 + step_x_01;
+
+				uint32_t pixel_index[4];
+				pixel_index[0] = pixel_index_row; pixel_index[1] = pixel_index_row + 1;
+				pixel_index[2] = pixel_index_row - target_size->x; pixel_index[3] = pixel_index_row - target_size->x + 1;
+
+				point_x[0] = min.x; point_x[1] = min.x + sub_multip;
+				point_x[3] = min.x; point_x[3] = min.x + sub_multip;
+				for (; point_x[0] <= max.x; point_x[0] += step_size, point_x[1] += step_size, point_x[2] += step_size, point_x[3] += step_size)
+				{
+					int32_t mask[4];
+					mask[0] = w0[0] | w1[0] | w2[0]; mask[1] = w0[1] | w1[1] | w2[1];
+					mask[2] = w0[2] | w1[2] | w2[2]; mask[3] = w0[3] | w1[3] | w2[3];
+
+					/* temp test hack */
+					if (pixel_index[3] > pixel_index[1])
+					{
+						mask[2] |= -1;
+						mask[3] |= -1;
+					}
+
+					if (mask[0] >= 0 || mask[1] >= 0 ||
+						mask[2] >= 0 || mask[3] >= 0)
+					{
+						float w0_f[4];
+						w0_f[0] = min((float)w0[0] * one_over_double_area, 1.0f); w0_f[1] = min((float)w0[1] * one_over_double_area, 1.0f);
+						w0_f[2] = min((float)w0[2] * one_over_double_area, 1.0f); w0_f[3] = min((float)w0[3] * one_over_double_area, 1.0f);
+						float w1_f[4];
+						w1_f[0] = min((float)w1[0] * one_over_double_area, 1.0f); w1_f[1] = min((float)w1[1] * one_over_double_area, 1.0f);
+						w1_f[2] = min((float)w1[2] * one_over_double_area, 1.0f); w1_f[3] = min((float)w1[3] * one_over_double_area, 1.0f);
+						float w2_f[4];
+						w2_f[0] = max(1.0f - w0_f[0] - w1_f[0], 0.0f); w2_f[1] = max(1.0f - w0_f[1] - w1_f[1], 0.0f);
+						w2_f[2] = max(1.0f - w0_f[2] - w1_f[2], 0.0f); w2_f[3] = max(1.0f - w0_f[3] - w1_f[3], 0.0f);
+
+						uint32_t z[4];
+						z[0] = (uint32_t)((work_z[i0] + (w1_f[0] * z10) + (w2_f[0] * z20)) * (1 << DEPTH_BITS)); z[1] = (uint32_t)((work_z[i0] + (w1_f[1] * z10) + (w2_f[1] * z20)) * (1 << DEPTH_BITS));
+						z[2] = (uint32_t)((work_z[i0] + (w1_f[2] * z10) + (w2_f[2] * z20)) * (1 << DEPTH_BITS)); z[3] = (uint32_t)((work_z[i0] + (w1_f[3] * z10) + (w2_f[3] * z20)) * (1 << DEPTH_BITS));
+
+						assert((mask[0] < 0 || (z[0] < ((1 << DEPTH_BITS) + 1))) && "rasterizer_rasterize: z[0] value is too large"); assert((mask[1] < 0 || (z[1] < ((1 << DEPTH_BITS) + 1))) && "rasterizer_rasterize: z[2] value is too large");
+						assert((mask[2] < 0 || (z[2] < ((1 << DEPTH_BITS) + 1))) && "rasterizer_rasterize: z[2] value is too large"); assert((mask[3] < 0 || (z[3] < ((1 << DEPTH_BITS) + 1))) && "rasterizer_rasterize: z[3] value is too large");
+
+						/* This needs to be fixed, too much branches */
+						//mask[0] |= (z[0] >= depth_buf[pixel_index[0]] * -1); mask[1] |= (z[1] >= depth_buf[pixel_index[1]] * -1);
+						//mask[2] |= (z[2] >= depth_buf[pixel_index[2]] * -1); mask[3] |= (z[3] >= depth_buf[pixel_index[3]] * -1);
+						if (z[0] >= depth_buf[pixel_index[0]]) mask[0] |= -1; if (z[1] >= depth_buf[pixel_index[1]]) mask[1] |= -1;
+						if (z[2] >= depth_buf[pixel_index[2]]) mask[2] |= -1; if (z[3] >= depth_buf[pixel_index[3]]) mask[3] |= -1;
+
+
+						if (mask[0] >= 0 || mask[1] >= 0 ||
+							mask[2] >= 0 || mask[3] >= 0)
+						{
+							float interp_w[4];
+							interp_w[0] = work_w[i0] * w0_f[0] + work_w[i1] * w1_f[0] + work_w[i2] * w2_f[0]; interp_w[1] = work_w[i0] * w0_f[1] + work_w[i1] * w1_f[1] + work_w[i2] * w2_f[1];
+							interp_w[2] = work_w[i0] * w0_f[2] + work_w[i1] * w1_f[2] + work_w[i2] * w2_f[2]; interp_w[3] = work_w[i0] * w0_f[3] + work_w[i1] * w1_f[3] + work_w[i2] * w2_f[3];
+							float u[4];
+							u[0] = (uv0.x + (w1_f[0] * uv10.x) + (w2_f[0] * uv20.x)) / interp_w[0]; u[1] = (uv0.x + (w1_f[1] * uv10.x) + (w2_f[1] * uv20.x)) / interp_w[1];
+							u[2] = (uv0.x + (w1_f[2] * uv10.x) + (w2_f[2] * uv20.x)) / interp_w[2]; u[3] = (uv0.x + (w1_f[3] * uv10.x) + (w2_f[3] * uv20.x)) / interp_w[3];
+							float v[4];
+							v[0] = (uv0.y + (w1_f[0] * uv10.y) + (w2_f[0] * uv20.y)) / interp_w[0]; v[1] = (uv0.y + (w1_f[1] * uv10.y) + (w2_f[1] * uv20.y)) / interp_w[1];
+							v[2] = (uv0.y + (w1_f[2] * uv10.y) + (w2_f[2] * uv20.y)) / interp_w[2]; v[3] = (uv0.y + (w1_f[3] * uv10.y) + (w2_f[3] * uv20.y)) / interp_w[3];
+
+							unsigned int texture_index[4];
+							texture_index[0] = (unsigned)(tex_coor_y_max * v[0]) * (unsigned)texture_size->x + (unsigned)(tex_coor_x_max * u[0]);
+							texture_index[1] = (unsigned)(tex_coor_y_max * v[1]) * (unsigned)texture_size->x + (unsigned)(tex_coor_x_max * u[1]);
+							texture_index[2] = (unsigned)(tex_coor_y_max * v[2]) * (unsigned)texture_size->x + (unsigned)(tex_coor_x_max * u[2]);
+							texture_index[3] = (unsigned)(tex_coor_y_max * v[3]) * (unsigned)texture_size->x + (unsigned)(tex_coor_x_max * u[3]);
+
+							for (unsigned int pixel = 0; pixel < 4; ++pixel)
+							{
+								if (mask[pixel] < 0)
+									continue;
+
+								assert(pixel_index[pixel] < (unsigned)(target_size->x * target_size->y) && "rasterizer_rasterize: invalid pixel_index");
+								assert(texture_index[pixel] < (unsigned)(texture_size->x * texture_size->y) && "rasterizer_rasterize: invalid texture_index");
+
+								depth_buf[pixel_index[pixel]] = z[pixel];
+								render_target[pixel_index[pixel]] = texture[texture_index[pixel]];
+							}
+						}
+					}
+					w0[0] += step_x_12 * 2; w0[1] += step_x_12 * 2;
+					w0[2] += step_x_12 * 2; w0[3] += step_x_12 * 2;
+					w1[0] += step_x_20 * 2; w1[1] += step_x_20 * 2;
+					w1[2] += step_x_20 * 2; w1[3] += step_x_20 * 2;
+					w2[0] += step_x_01 * 2; w2[1] += step_x_01 * 2;
+					w2[2] += step_x_01 * 2; w2[3] += step_x_01 * 2;
+
+					pixel_index[0] += 2; pixel_index[1] += 2;
+					pixel_index[2] += 2; pixel_index[3] += 2;
+				}
+
+				w0_row += step_y_12 * 2;
+				w1_row += step_y_20 * 2;
+				w2_row += step_y_01 * 2;
+
+				pixel_index_row -= target_size->x * 2;
+			}
+#else
 			struct vec2_int point;
 			for (point.y = min.y; point.y <= max.y; point.y += sub_multip)
 			{
@@ -474,7 +602,6 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 				int32_t w2 = w2_row;
 
 				unsigned int pixel_index = pixel_index_row;
-
 				for (point.x = min.x; point.x <= max.x; point.x += sub_multip)
 				{
 					if ((w0 | w1 | w2) >= 0)
@@ -485,7 +612,6 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 
 						uint32_t z = (uint32_t)((work_z[i0] + (w1_f * z10) + (w2_f * z20)) * (1 << DEPTH_BITS));
 						assert(z < ((1 << DEPTH_BITS) + 1) && "rasterizer_rasterize: z value is too large");
-
 						if (z < depth_buf[pixel_index])
 						{
 							depth_buf[pixel_index] = z;
@@ -496,8 +622,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 							float v = uv0.y + (w1_f * uv10.y) + (w2_f * uv20.y);
 							v /= interp_w;
 
-							const unsigned int texture_index = (unsigned)(tex_coor_y_max * v)
-								* (unsigned)texture_size->x 
+							const unsigned int texture_index = (unsigned)(tex_coor_y_max * v) * (unsigned)texture_size->x
 								+ (unsigned)(tex_coor_x_max * u);
 							assert(pixel_index < (unsigned)(target_size->x * target_size->y) && "rasterizer_rasterize: invalid pixel_index");
 							assert(texture_index < (unsigned)(texture_size->x * texture_size->y) && "rasterizer_rasterize: invalid texture_index");
@@ -518,6 +643,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 
 				pixel_index_row -= target_size->x;
 			}
+#endif		
 		}
 	}
 }
