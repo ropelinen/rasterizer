@@ -8,7 +8,8 @@
 /* Allows rasterization in 2x2 blocks.
  * Currently slower than the normal one pixel at a time version,
  * but is meant to be ground work for a SIMD implementation. */
-//#define RASTER_BLOCKS
+//#define RASTER_BLOCKS 1
+//#define USE_SWIZZLING 1
 
 /* 4 sub bits gives us [-2048, 2047] max render target.
  * It should be possible to get something similar out of 8 sub bits. */
@@ -467,13 +468,19 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 
 			float one_over_double_area = 1.0f / (float)winding_2d(&work_poly[i0], &work_poly[i1], &work_poly[i2]);
 
-			/* How we calculate and step this is based on the format of the backbuffer.
+			/* How we calculate and step this is based on the format of the render target.
 			 * Instead of trying to support what ever the blitter uses should just require some specific format (goes also for color format).
 			 * Could for example use tiling or swizzling for optimization https://fgiesen.wordpress.com/2011/01/17/texture-tiling-and-swizzling/
 			 * Currently render targer format: 0, 0 at bottom left, increases towards top right, 32bit Reserved|Red|Green|Blue */
+#ifdef USE_SWIZZLING
+			unsigned int pixel_index_row = target_size->x
+				* (((min.y - half_pixel) / sub_multip) + half_height) /* y */
+				+ ((((min.x - half_pixel) / sub_multip) + half_width) * 2); /* x */
+#else
 			unsigned int pixel_index_row = target_size->x
 				* (((min.y - half_pixel) / sub_multip) + half_height) /* y */
 				+ (((min.x - half_pixel) / sub_multip) + half_width); /* x */
+#endif
 
 			const float tex_coor_x_max = (float)(texture_size->x - 1);
 			const float tex_coor_y_max = (float)(texture_size->y - 1);
@@ -499,8 +506,13 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 				w2[2] = w2_row + step_y_01; w2[3] = w2_row + step_y_01 + step_x_01;
 
 				uint32_t pixel_index[4];
+#ifdef USE_SWIZZLING
+				pixel_index[0] = pixel_index_row; pixel_index[1] = pixel_index_row + 1;
+				pixel_index[2] = pixel_index_row + 2; pixel_index[3] = pixel_index_row + 3;
+#else
 				pixel_index[0] = pixel_index_row; pixel_index[1] = pixel_index_row + 1;
 				pixel_index[2] = pixel_index_row + target_size->x; pixel_index[3] = pixel_index_row + target_size->x + 1;
+#endif
 
 				point_x[0] = min.x; point_x[1] = min.x + sub_multip;
 				point_x[3] = min.x; point_x[3] = min.x + sub_multip;
@@ -570,8 +582,13 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 					w2[0] += step_x_01 * 2; w2[1] += step_x_01 * 2;
 					w2[2] += step_x_01 * 2; w2[3] += step_x_01 * 2;
 
+#ifdef USE_SWIZZLING
+					pixel_index[0] += 4; pixel_index[1] += 4;
+					pixel_index[2] += 4; pixel_index[3] += 4;
+#else
 					pixel_index[0] += 2; pixel_index[1] += 2;
 					pixel_index[2] += 2; pixel_index[3] += 2;
+#endif
 				}
 
 				w0_row += step_y_12 * 2;
