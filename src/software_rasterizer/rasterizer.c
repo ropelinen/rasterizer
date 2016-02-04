@@ -510,15 +510,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 					mask[0] = w0[0] | w1[0] | w2[0]; mask[1] = w0[1] | w1[1] | w2[1];
 					mask[2] = w0[2] | w1[2] | w2[2]; mask[3] = w0[3] | w1[3] | w2[3];
 
-					/* temp test hack */
-					if (pixel_index[3] > pixel_index[1])
-					{
-						mask[2] |= -1;
-						mask[3] |= -1;
-					}
-
-					if (mask[0] >= 0 || mask[1] >= 0 ||
-						mask[2] >= 0 || mask[3] >= 0)
+					if ((((mask[0] & mask[1]) & mask[2]) & mask[3]) >= 0)
 					{
 						float w0_f[4];
 						w0_f[0] = min((float)w0[0] * one_over_double_area, 1.0f); w0_f[1] = min((float)w0[1] * one_over_double_area, 1.0f);
@@ -537,15 +529,10 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 						assert((mask[0] < 0 || (z[0] < ((1 << DEPTH_BITS) + 1))) && "rasterizer_rasterize: z[0] value is too large"); assert((mask[1] < 0 || (z[1] < ((1 << DEPTH_BITS) + 1))) && "rasterizer_rasterize: z[2] value is too large");
 						assert((mask[2] < 0 || (z[2] < ((1 << DEPTH_BITS) + 1))) && "rasterizer_rasterize: z[2] value is too large"); assert((mask[3] < 0 || (z[3] < ((1 << DEPTH_BITS) + 1))) && "rasterizer_rasterize: z[3] value is too large");
 
-						/* This needs to be fixed, too much branches */
-						//mask[0] |= (z[0] >= depth_buf[pixel_index[0]] * -1); mask[1] |= (z[1] >= depth_buf[pixel_index[1]] * -1);
-						//mask[2] |= (z[2] >= depth_buf[pixel_index[2]] * -1); mask[3] |= (z[3] >= depth_buf[pixel_index[3]] * -1);
-						if (z[0] >= depth_buf[pixel_index[0]]) mask[0] |= -1; if (z[1] >= depth_buf[pixel_index[1]]) mask[1] |= -1;
-						if (z[2] >= depth_buf[pixel_index[2]]) mask[2] |= -1; if (z[3] >= depth_buf[pixel_index[3]]) mask[3] |= -1;
+						mask[0] |= (z[0] < depth_buf[pixel_index[0]]) - 1; mask[1] |= (z[1] < depth_buf[pixel_index[1]]) - 1;
+						mask[2] |= (z[2] < depth_buf[pixel_index[2]]) - 1; mask[3] |= (z[3] < depth_buf[pixel_index[3]]) - 1;
 
-
-						if (mask[0] >= 0 || mask[1] >= 0 ||
-							mask[2] >= 0 || mask[3] >= 0)
+						if ((((mask[0] & mask[1]) & mask[2]) & mask[3]) >= 0)
 						{
 							float interp_w[4];
 							interp_w[0] = work_w[i0] * w0_f[0] + work_w[i1] * w1_f[0] + work_w[i2] * w2_f[0]; interp_w[1] = work_w[i0] * w0_f[1] + work_w[i1] * w1_f[1] + work_w[i2] * w2_f[1];
