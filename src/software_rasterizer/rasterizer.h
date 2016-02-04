@@ -1,7 +1,7 @@
 #ifndef RPLNN_RASTERIZER_H
 #define RPLNN_RASTERIZER_H
 
-/* Currently wants the points in pixel coordinates, (0, 0) at screen center increasing towards top-right. Tri wanted as CCW 
+/* Left handed coordinate system. Tris wanted as CCW. 
  * Depth buffer stores the depth in the first 24bits and the rest 8 are reserved for future use (stencil). 
  * Rasterize area is in inclusive pixel values for min >= 0 && max < target_size && min < max */
 void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const struct vec2_int *target_size, const struct vec2_int *rasterize_area_min, const struct vec2_int *rasterize_area_max,
