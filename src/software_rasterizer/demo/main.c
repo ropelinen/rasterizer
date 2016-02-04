@@ -7,13 +7,14 @@
 #include "software_rasterizer/rasterizer.h"
 
 #define USE_THREADING 1
+//#define USE_SWIZZLING 1
 #define VERTS_IN_BOX 14
 #define LARGE_VERT_BUF_BOXES 8
 
 #ifdef USE_THREADING
 struct thread_data
 {
-	uint32_t *back_buffer;
+	uint32_t *render_target;
 	uint32_t *depth_buffer;
 	struct vec2_int target_size;
 	struct vec2_int raster_area_min;
@@ -108,14 +109,18 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	translation.x += 10.0f; translation.y += 18.0f; translation.z += 50.0f;
 	struct matrix_3x4 trans_mat_large3 = mat34_get_translation(&translation);
 
-	uint32_t *back_buffer = get_backbuffer(renderer_info);
-	if (!back_buffer)
+	struct vec2_int rendertarget_size = get_backbuffer_size(renderer_info);
+#ifdef USE_SWIZZLING
+	uint32_t *render_target = malloc(rendertarget_size.x * rendertarget_size.y * sizeof(uint32_t));
+#else
+	uint32_t *render_target = get_backbuffer(renderer_info);
+#endif
+	if (!render_target)
 		error_popup("Couldn't get back buffer", true);
 
-	struct vec2_int backbuffer_size = get_backbuffer_size(renderer_info);
-	uint32_t *depth_buf = malloc(backbuffer_size.x * backbuffer_size.y * sizeof(uint32_t));
+	uint32_t *depth_buf = malloc(rendertarget_size.x * rendertarget_size.y * sizeof(uint32_t));
 
-	struct matrix_4x4 perspective_mat = mat44_get_perspective_lh_fov(DEG_TO_RAD(59.0f), (float)backbuffer_size.x / (float)backbuffer_size.y, 1.0f, 1000.0f);
+	struct matrix_4x4 perspective_mat = mat44_get_perspective_lh_fov(DEG_TO_RAD(59.0f), (float)rendertarget_size.x / (float)rendertarget_size.y, 1.0f, 1000.0f);
 
 	uint32_t frame_time_mus = 0;
 	uint64_t frame_start = get_time();
@@ -132,9 +137,9 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	{
 		threads[i] = thread_create(i);
 		thread_data_init(&thread_data[i], 5);
-		thread_data[i].back_buffer = back_buffer;
+		thread_data[i].render_target = render_target;
 		thread_data[i].depth_buffer = depth_buf;
-		thread_data[i].target_size = backbuffer_size;
+		thread_data[i].target_size = rendertarget_size;
 
 		thread_data[i].vert_bufs[0] = &final_vert_buf[0];
 		thread_data[i].uv_bufs[0] = &uv[0];
@@ -172,15 +177,20 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		thread_data[i].texture_sizes[4] = texture_size;
 	}
 
-	thread_data_calculate_areas(thread_data, core_count, &backbuffer_size);
+	thread_data_calculate_areas(thread_data, core_count, &rendertarget_size);
 #endif
 
 	while (event_loop())
 	{
 		if (stabilizing_delay > 0)
 			--stabilizing_delay;
-
+		
+#ifdef USE_SWIZZLING
+		for (int i = 0; i < rendertarget_size.x * rendertarget_size.y; ++i)
+			((int*)render_target)[i] = 0xFF0000;
+#else
 		renderer_clear_backbuffer(renderer_info, 0xFF0000);
+#endif
 
 		float dt = (float)frame_time_mus / 1000000.0f;
 
@@ -207,7 +217,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		transform_vertices(&(vert_buf_large[0]), &(final_vert_buf_large3[0]), sizeof(vert_buf_large) / sizeof(vert_buf_large[0]), &trans_mat_large3, &rot_mat, &camera_projection);
 
 
-		rasterizer_clear_depth_buffer(depth_buf, &backbuffer_size);
+		rasterizer_clear_depth_buffer(depth_buf, &rendertarget_size);
 
 		uint64_t raster_duration = get_time();
 #ifdef USE_THREADING
@@ -219,20 +229,36 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 #else
 		const struct vec2_int area_min = { .x = 0, .y = 0 };
 		struct vec2_int area_max;
-		area_max.x = backbuffer_size.x - 1;
-		area_max.y = backbuffer_size.y - 1;
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf[0], &uv[0], &ind_buf[0], ind_buf_size, texture_data, texture_size);
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf2[0], &uv[0], &ind_buf[0], ind_buf_size, texture_data, texture_size);
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf_large[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf_large2[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
-		rasterizer_rasterize(back_buffer, depth_buf, &backbuffer_size, &area_min, &area_max, &final_vert_buf_large3[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
+		area_max.x = rendertarget_size.x - 1;
+		area_max.y = rendertarget_size.y - 1;
+		rasterizer_rasterize(render_target, depth_buf, &rendertarget_size, &area_min, &area_max, &final_vert_buf[0], &uv[0], &ind_buf[0], ind_buf_size, texture_data, texture_size);
+		rasterizer_rasterize(render_target, depth_buf, &rendertarget_size, &area_min, &area_max, &final_vert_buf2[0], &uv[0], &ind_buf[0], ind_buf_size, texture_data, texture_size);
+		rasterizer_rasterize(render_target, depth_buf, &rendertarget_size, &area_min, &area_max, &final_vert_buf_large[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
+		rasterizer_rasterize(render_target, depth_buf, &rendertarget_size, &area_min, &area_max, &final_vert_buf_large2[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
+		rasterizer_rasterize(render_target, depth_buf, &rendertarget_size, &area_min, &area_max, &final_vert_buf_large3[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
 #endif
 		raster_duration = get_time() - raster_duration;
-
+#ifdef USE_SWIZZLING
+		/* Deswizzle the backbuffer here */
+		uint32_t *bb = get_backbuffer(renderer_info);
+		for (int y = 0; y < rendertarget_size.y; y += 2)
+		{
+			int row = y * rendertarget_size.x;
+			for (int x = 0; x < rendertarget_size.x; x += 2)
+			{
+				int start = row + x;
+				int start_swizz = row + x * 2;
+				bb[start] = render_target[start_swizz];
+				bb[start+1] = render_target[start_swizz + 1];
+				bb[start+ rendertarget_size.x] = render_target[start_swizz + 2];
+				bb[start+ rendertarget_size.x+1] = render_target[start_swizz + 3];
+			}
+		}
+#endif
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
 		if (stats && font && stats_profiling_run_complete(stats))
-			render_stats(stats, font, get_backbuffer(renderer_info), &backbuffer_size);
+			render_stats(stats, font, get_backbuffer(renderer_info), &rendertarget_size);
 
 		finish_drawing(api_info);
 
@@ -259,6 +285,9 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	free(thread_data);
 #endif
 
+#ifdef USE_SWIZZLING
+	free(render_target);
+#endif
 	free(depth_buf);
 
 	if (stats)
@@ -570,7 +599,7 @@ void rasterize_thread(void *data)
 	struct thread_data *td = (struct thread_data *)data;
 	for (unsigned int i = 0; i < td->buffer_count; ++i)
 	{
-		rasterizer_rasterize(td->back_buffer, td->depth_buffer, &td->target_size, &td->raster_area_min, &td->raster_area_max,
+		rasterizer_rasterize(td->render_target, td->depth_buffer, &td->target_size, &td->raster_area_min, &td->raster_area_max,
 			&td->vert_bufs[i][0], &td->uv_bufs[i][0], &td->ind_bufs[i][0], td->ind_counts[i],
 			td->textures[i], td->texture_sizes[i]);
 	}
