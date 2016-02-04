@@ -96,7 +96,7 @@ void font_render_text(void *render_target, const struct vec2_int *target_size, s
 
 		for (int char_y = 0; char_y < char_height; ++char_y)
 		{
-			int line = pos->y + char_y + y;
+			int line = target_size->y - (pos->y + char_y + y);
 			if (line >= target_size->y)
 				break;
 

@@ -120,7 +120,7 @@ void renderer_initialize(struct renderer_info *info, unsigned int width, unsigne
 	memset(bitmapinfo, 0, sizeof(BITMAPINFO));
 	bitmapinfo->bmiHeader.biSize = sizeof(BITMAPINFO);
 	bitmapinfo->bmiHeader.biWidth = width;
-	bitmapinfo->bmiHeader.biHeight = -(int)height; /* Negative here to make this top-down bitmap, but do I really want this?? */
+	bitmapinfo->bmiHeader.biHeight = height;
 	bitmapinfo->bmiHeader.biPlanes = 1;
 	bitmapinfo->bmiHeader.biBitCount = 32;
 	bitmapinfo->bmiHeader.biCompression = BI_RGB;

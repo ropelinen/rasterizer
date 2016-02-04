@@ -470,9 +470,9 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 			/* How we calculate and step this is based on the format of the backbuffer.
 			 * Instead of trying to support what ever the blitter uses should just require some specific format (goes also for color format).
 			 * Could for example use tiling or swizzling for optimization https://fgiesen.wordpress.com/2011/01/17/texture-tiling-and-swizzling/
-			 * Currently render targer format: 0, 0 at top left, increases towards bottom right, 32bit Reserved|Red|Green|Blue */
+			 * Currently render targer format: 0, 0 at bottom left, increases towards top right, 32bit Reserved|Red|Green|Blue */
 			unsigned int pixel_index_row = target_size->x
-				* ((target_size->y - 1) - (((min.y - half_pixel) / sub_multip) + half_height)) /* y */
+				* (((min.y - half_pixel) / sub_multip) + half_height) /* y */
 				+ (((min.x - half_pixel) / sub_multip) + half_width); /* x */
 
 			const float tex_coor_x_max = (float)(texture_size->x - 1);
@@ -500,7 +500,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 
 				uint32_t pixel_index[4];
 				pixel_index[0] = pixel_index_row; pixel_index[1] = pixel_index_row + 1;
-				pixel_index[2] = pixel_index_row - target_size->x; pixel_index[3] = pixel_index_row - target_size->x + 1;
+				pixel_index[2] = pixel_index_row + target_size->x; pixel_index[3] = pixel_index_row + target_size->x + 1;
 
 				point_x[0] = min.x; point_x[1] = min.x + sub_multip;
 				point_x[3] = min.x; point_x[3] = min.x + sub_multip;
@@ -591,7 +591,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 				w1_row += step_y_20 * 2;
 				w2_row += step_y_01 * 2;
 
-				pixel_index_row -= target_size->x * 2;
+				pixel_index_row += target_size->x * 2;
 			}
 #else
 			struct vec2_int point;
@@ -641,7 +641,7 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 				w1_row += step_y_20;
 				w2_row += step_y_01;
 
-				pixel_index_row -= target_size->x;
+				pixel_index_row += target_size->x;
 			}
 #endif		
 		}
