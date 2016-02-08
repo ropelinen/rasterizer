@@ -5,7 +5,7 @@
 
 #include "software_rasterizer/vector.h"
 
-/* Enables parallelization using SSE2,
+/* Enables parallelization using SSE2.
  * Notably faster than the non-simd version so should be used if possible. 
  * Using simd is highly recommended if you are building a x86 version. */
 #define USE_SIMD
@@ -32,6 +32,7 @@
 #define GB_TOP (TO_FIXED(GB_MAX, (1 << SUB_BITS)))
 
 #ifdef USE_SIMD
+/* From http://stackoverflow.com/questions/10500766/sse-multiplication-of-4-32-bit-integers */
 __m128i mul_epi32(const __m128i a, const __m128i b)
 {
 	__m128i tmp1 = _mm_mul_epu32(a, b); /* mul 2,0*/
@@ -94,7 +95,7 @@ struct vec2_int get_gb_intersection_point(const unsigned int oc, const struct ve
 
 	struct vec2_int result = { .x = 0, .y = 0 };
 
-	/* When doing fp / you would normally (a << frac_bits) / b but the * does that for us already. */
+	/* When doing fp / you would normally (a << frac_bits) / b but the multiply does that for us already. */
 
 	switch (oc)
 	{
@@ -221,7 +222,7 @@ bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_
 		else if (oc0 & oc1 & oc2)
 		{
 			/* Partially inside the view port and not inside the guard band?? */
-			assert(false && "rasterizer_rasterize: Poly can't be partailly in view and wholly outside the guard band simultaneously.");
+			assert(false && "clip: Poly can't be partailly in view and wholly outside the guard band simultaneously.");
 			return false;
 		}
 		else
@@ -304,7 +305,7 @@ bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_
 				clipped_poly_indices[clipped_index_count] = 0;
 				++clipped_index_count;
 
-				assert(clipped_vert_count < 7 && "rasterizer_rasterize: too many vertices in the clipped poly");
+				assert(clipped_vert_count < 7 && "clip: too many vertices in the clipped poly");
 
 				*work_vert_count = clipped_vert_count;
 				for (unsigned int j = 0; j < *work_vert_count; ++j)
@@ -336,8 +337,8 @@ bool clip(struct vec2_int *work_poly, float *work_z, float *work_w, struct vec2_
 				work_poly_indices[j] = temp_ind_buf[j];
 
 			*work_index_count = temp_ind_count;
-			assert(*work_index_count < 15 && "rasterizer_rasterize: too many indices in the clipped poly");
-			assert(*work_index_count % 3 == 0 && "rasterizer_rasterize: clipped index count is invalid");
+			assert(*work_index_count < 15 && "clip: too many indices in the clipped poly");
+			assert(*work_index_count % 3 == 0 && "clip: clipped index count is invalid");
 
 			return true;
 		}
