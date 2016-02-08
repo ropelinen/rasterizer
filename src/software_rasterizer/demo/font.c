@@ -74,7 +74,7 @@ void font_render_text(void *render_target, const struct vec2_int *target_size, s
 	assert(target_size && "font_render_text: target_size is NULL");
 	assert(font && "font_render_text: font is NULL");
 	assert(text && "font_render_text: text is NULL");
-	assert(pos && "font_render_text: text is NULL");
+	assert(pos && "font_render_text: pos is NULL");
 
 	stbtt_fontinfo *font_info = &(font->font_info);
 	float scale = font->scale;
