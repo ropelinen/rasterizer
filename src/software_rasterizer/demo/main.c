@@ -7,7 +7,6 @@
 #include "software_rasterizer/rasterizer.h"
 
 #define USE_THREADING 1
-//#define USE_SWIZZLING 1
 #define VERTS_IN_BOX 14
 #define LARGE_VERT_BUF_BOXES 8
 
@@ -110,11 +109,13 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	struct matrix_3x4 trans_mat_large3 = mat34_get_translation(&translation);
 
 	struct vec2_int rendertarget_size = get_backbuffer_size(renderer_info);
-#ifdef USE_SWIZZLING
-	uint32_t *render_target = malloc(rendertarget_size.x * rendertarget_size.y * sizeof(uint32_t));
-#else
-	uint32_t *render_target = get_backbuffer(renderer_info);
-#endif
+	
+	uint32_t *render_target = NULL;
+	if (rasterizer_uses_simd())
+		render_target = malloc(rendertarget_size.x * rendertarget_size.y * sizeof(uint32_t));
+	else
+		render_target = get_backbuffer(renderer_info);
+
 	if (!render_target)
 		error_popup("Couldn't get back buffer", true);
 
@@ -185,12 +186,13 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		if (stabilizing_delay > 0)
 			--stabilizing_delay;
 		
-#ifdef USE_SWIZZLING
-		for (int i = 0; i < rendertarget_size.x * rendertarget_size.y; ++i)
-			((int*)render_target)[i] = 0xFF0000;
-#else
-		renderer_clear_backbuffer(renderer_info, 0xFF0000);
-#endif
+		if (rasterizer_uses_simd())
+		{
+			for (int i = 0; i < rendertarget_size.x * rendertarget_size.y; ++i)
+				((int*)render_target)[i] = 0xFF0000;
+		}
+		else
+			renderer_clear_backbuffer(renderer_info, 0xFF0000);
 
 		float dt = (float)frame_time_mus / 1000000.0f;
 
@@ -238,23 +240,26 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		rasterizer_rasterize(render_target, depth_buf, &rendertarget_size, &area_min, &area_max, &final_vert_buf_large3[0], &uv_large[0], &ind_buf_large[0], ind_buf_large_size, texture_data, texture_size);
 #endif
 		raster_duration = get_time() - raster_duration;
-#ifdef USE_SWIZZLING
-		/* Deswizzle the backbuffer here */
-		uint32_t *bb = get_backbuffer(renderer_info);
-		for (int y = 0; y < rendertarget_size.y; y += 2)
+
+		if (rasterizer_uses_simd())
 		{
-			int row = y * rendertarget_size.x;
-			for (int x = 0; x < rendertarget_size.x; x += 2)
+			/* Deswizzle the backbuffer here */
+			uint32_t *bb = get_backbuffer(renderer_info);
+			for (int y = 0; y < rendertarget_size.y; y += 2)
 			{
-				int start = row + x;
-				int start_swizz = row + x * 2;
-				bb[start] = render_target[start_swizz];
-				bb[start+1] = render_target[start_swizz + 1];
-				bb[start+ rendertarget_size.x] = render_target[start_swizz + 2];
-				bb[start+ rendertarget_size.x+1] = render_target[start_swizz + 3];
+				int row = y * rendertarget_size.x;
+				for (int x = 0; x < rendertarget_size.x; x += 2)
+				{
+					int start = row + x;
+					int start_swizz = row + x * 2;
+					bb[start] = render_target[start_swizz];
+					bb[start+1] = render_target[start_swizz + 1];
+					bb[start+ rendertarget_size.x] = render_target[start_swizz + 2];
+					bb[start+ rendertarget_size.x+1] = render_target[start_swizz + 3];
+				}
 			}
 		}
-#endif
+
 		/* Stat rendering should be easy to disable/modify,
 		* maybe a bit field for what should be shown uint32_t would be easily enough. */
 		if (stats && font && stats_profiling_run_complete(stats))
@@ -285,10 +290,10 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	free(thread_data);
 #endif
 
-#ifdef USE_SWIZZLING
-	free(render_target);
-#endif
-	free(depth_buf);
+	if (rasterizer_uses_simd())
+		free(render_target);
+	else
+		free(depth_buf);
 
 	if (stats)
 		stats_destroy(&stats);
