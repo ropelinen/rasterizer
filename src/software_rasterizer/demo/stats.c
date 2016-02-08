@@ -17,7 +17,7 @@ struct stats
 	/* The sum of all the stats, used for fast calculation of avarages. */
 	uint64_t *sums;
 	/* We use the stats array like a circular buffer
-	* this is the index we are currently using. */
+	 * this is the index we are currently using. */
 	unsigned int current_index;
 	unsigned int frames_in_buffer;
 	unsigned char stat_count;
