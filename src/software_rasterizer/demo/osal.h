@@ -8,7 +8,7 @@ struct renderer_info;
 
 void error_popup(const char *msg, const bool kill_program);
 
-/* This should be defined in main.c and only containt non platform specific code */
+/* This should be defined in main.c and only contain non platform specific code */
 void main(struct api_info *api_info, struct renderer_info *renderer_info);
 
 bool event_loop(void);

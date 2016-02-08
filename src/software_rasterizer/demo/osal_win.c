@@ -90,8 +90,6 @@ void create_window(struct api_info *api_info, HINSTANCE hInstance, struct render
 	if (!AdjustWindowRectEx(&client_size, style, false, exStyle))
 		error_popup("Failed to get correct window size", true);
 
-		
-
 	api_info->hwnd = CreateWindowEx(
 		exStyle,
 		class_name,
@@ -182,7 +180,7 @@ void *get_backbuffer(struct renderer_info *info)
 
 uint32_t get_blit_duration_ms(struct renderer_info *info)
 {
-	assert(info && "get_blit_time_ms: info is NULL");
+	assert(info && "get_blit_duration_ms: info is NULL");
 
 #if RPLNN_RENDERER == RPLNN_RENDERER_GDI
 	return info->blit_duration_mus;
@@ -207,8 +205,9 @@ struct vec2_int get_backbuffer_size(struct renderer_info *info)
 
 void renderer_clear_backbuffer(struct renderer_info *info, const uint32_t color)
 {
+	assert(info && "renderer_clear_backbuffer: info is NULL");
+
 #if RPLNN_RENDERER == RPLNN_RENDERER_GDI
-	/* Optimize this */
 	for (unsigned i = 0; i < info->width * info->height; ++i)
 		((int*)info->buffer)[i] = color;
 #endif
@@ -261,11 +260,17 @@ unsigned int get_logical_core_count(void)
 
 bool uint64_to_string(const uint64_t value, char *buffer, const size_t buffer_size)
 {
+	assert(buffer && "uint64_to_string: buffer is NULL");
+	assert(buffer_size && "uint64_to_string: buffer_size is 0");
+
 	return (_ui64toa_s(value, buffer, buffer_size, 10) == 0);
 }
 
 bool float_to_string(const float value, char *buffer, const size_t buffer_size)
 {
+	assert(buffer && "float_to_string: buffer is NULL");
+	assert(buffer_size && "float_to_string: buffer_size is 0");
+
 	return snprintf(buffer, buffer_size, "%.3f", value) < (int)buffer_size;
 }
 
@@ -439,7 +444,7 @@ bool thread_has_task(struct thread *thread)
 
 void thread_wait_for_task(struct thread *thread)
 {
-	assert(thread && "thread_in_task: thread is NULL");
+	assert(thread && "thread_wait_for_task: thread is NULL");
 
 	if (!thread_has_task(thread))
 	{
