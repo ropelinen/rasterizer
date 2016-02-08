@@ -6,7 +6,8 @@
 #include "software_rasterizer/vector.h"
 
 /* Enables parallelization using SSE2,
- * Notably faster than the non-simd version so should be used if possible. */
+ * Notably faster than the non-simd version so should be used if possible. 
+ * Using simd is highly recommended if you are building a x86 version. */
 #define USE_SIMD
 
 #ifdef USE_SIMD
@@ -580,6 +581,9 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 
 								/* There must be a better way to do this */
 								depth_buf[pixel_index_start + pixel] = ((int32_t *)&z)[pixel];
+								/* Mipmapping should help with this,
+								 * currently especially small triangles can cause cache misses
+								 * by accessing the texture in the opposite ends of the array.*/
 								render_target[pixel_index_start + pixel] = texture[((int32_t *)&texture_index)[pixel]];
 							}
 						}

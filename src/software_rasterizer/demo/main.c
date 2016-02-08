@@ -133,6 +133,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 	/* Not a good way to do this.
 	 * Should try to pass only the relevant vertex info to the thread.
+	 * In case a tri is covering multiple raster areas should be ok to pass it to all of them.
 	 * Would be relatively easy if I had the verts in some data structure suitable for occlusion culling. */
 	for (unsigned int i = 0; i < core_count; ++i)
 	{
@@ -261,7 +262,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		}
 
 		/* Stat rendering should be easy to disable/modify,
-		* maybe a bit field for what should be shown uint32_t would be easily enough. */
+		 * maybe a bit field for what should be shown uint32_t would be easily enough. */
 		if (stats && font && stats_profiling_run_complete(stats))
 			render_stats(stats, font, get_backbuffer(renderer_info), &rendertarget_size);
 
