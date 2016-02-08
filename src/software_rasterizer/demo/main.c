@@ -179,6 +179,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		thread_data[i].texture_sizes[4] = texture_size;
 	}
 
+	/* Might want to use fixed sized raster areas instead (32x32 or 64x64 should be ok).
+	 * With those it would be possible to have render target tiled to that pixel size with 2x2 blocks in those. */
 	thread_data_calculate_areas(thread_data, core_count, &rendertarget_size);
 #endif
 
@@ -261,8 +263,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 			}
 		}
 
-		/* Stat rendering should be easy to disable/modify,
-		 * maybe a bit field for what should be shown uint32_t would be easily enough. */
+		/* Stat rendering should be easy to disable/modify.
+		 * Maybe a bit field for what should be shown, uint32_t would be easily enough. */
 		if (stats && font && stats_profiling_run_complete(stats))
 			render_stats(stats, font, get_backbuffer(renderer_info), &rendertarget_size);
 
@@ -293,8 +295,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 	if (rasterizer_uses_simd())
 		free(render_target);
-	else
-		free(depth_buf);
+	
+	free(depth_buf);
 
 	if (stats)
 		stats_destroy(&stats);
@@ -394,6 +396,7 @@ void create_box_buffers(struct vec3_float *out_vert_buf, struct vec2_float *out_
 	out_ind_buf[33] = 12; out_ind_buf[34] = 11; out_ind_buf[35] = 13;
 }
 
+/* Generates something horrible, but I just need a bit larger vert buffer for testing */
 void generate_large_test_buffers(const struct vec3_float *vert_buf_box, const struct vec2_float *uv_box, const unsigned int *ind_buf_box,
                                  struct vec3_float *out_vert_buf, struct vec2_float *out_uv, unsigned int *out_ind_buf, const struct vec3_float *box_offsets, const unsigned int box_count_out)
 {
@@ -405,7 +408,6 @@ void generate_large_test_buffers(const struct vec3_float *vert_buf_box, const st
 	assert(out_ind_buf && "generate_large_test_buffers: out_ind_buf is NULL");
 	assert(box_offsets && "generate_large_test_buffers: box_offsets is NULL");
 
-	/* Generates a something horrible, but I just need a a bit larger vert buffer for testing */
 	struct matrix_3x4 trans_mat;
 	
 	for (unsigned int box = 0; box < box_count_out; ++box)
@@ -562,7 +564,7 @@ void thread_data_init(struct thread_data *data, const uint32_t buffer_count)
 
 void thread_data_deinit(struct thread_data *data)
 {
-	assert(data && "thread_data_destroy: data is NULL");
+	assert(data && "thread_data_deinit: data is NULL");
 
 	free(data->vert_bufs);
 	free(data->uv_bufs);
@@ -600,7 +602,7 @@ void thread_data_calculate_areas(struct thread_data *data, const unsigned int co
 
 void rasterize_thread(void *data)
 {
-	assert(data && "thread_func: data is NULL");
+	assert(data && "rasterize_thread: data is NULL");
 
 	struct thread_data *td = (struct thread_data *)data;
 	for (unsigned int i = 0; i < td->buffer_count; ++i)
