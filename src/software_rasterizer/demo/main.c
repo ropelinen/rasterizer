@@ -16,8 +16,9 @@ struct thread_data
 	uint32_t *render_target;
 	uint32_t *depth_buffer;
 	struct vec2_int target_size;
-	struct vec2_int raster_area_min;
-	struct vec2_int raster_area_max;
+	struct vec2_int *raster_area_mins;
+	struct vec2_int *raster_area_maxs;
+	uint32_t raster_area_count;
 	struct vec4_float **vert_bufs;
 	struct vec2_float **uv_bufs;
 	unsigned int **ind_bufs;
@@ -27,7 +28,7 @@ struct thread_data
 	uint32_t buffer_count;
 };
 
-void thread_data_init(struct thread_data *data, const uint32_t buffer_count);
+void thread_data_init(struct thread_data *data, const uint32_t buffer_count, const uint32_t raster_area_count);
 void thread_data_deinit(struct thread_data *data);
 void thread_data_calculate_areas(struct thread_data *data, const unsigned int core_count, const struct vec2_int *backbuffer_size);
 void rasterize_thread(void *data);
@@ -111,34 +112,50 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	struct vec2_int rendertarget_size = get_backbuffer_size(renderer_info);
 	
 	uint32_t *render_target = NULL;
+	struct vec2_int padded_size = { .x = 0, .y = 0 };
 	if (rasterizer_uses_simd())
-		render_target = malloc(rendertarget_size.x * rendertarget_size.y * sizeof(uint32_t));
+	{
+		if (rasterizer_uses_tiles())
+		{
+			rasterizer_get_padded_size(&rendertarget_size, &padded_size);
+			render_target = malloc(padded_size.x * padded_size.y * sizeof(uint32_t));
+		}
+		else
+			render_target = malloc(rendertarget_size.x * rendertarget_size.y * sizeof(uint32_t));
+	}
 	else
 		render_target = get_backbuffer(renderer_info);
 
 	if (!render_target)
 		error_popup("Couldn't get back buffer", true);
 
-	uint32_t *depth_buf = malloc(rendertarget_size.x * rendertarget_size.y * sizeof(uint32_t));
+	uint32_t *depth_buf = NULL;
+	if (rasterizer_uses_simd() && rasterizer_uses_tiles())
+		depth_buf = malloc(padded_size.x * padded_size.y * sizeof(uint32_t));
+	else
+		depth_buf = malloc(rendertarget_size.x * rendertarget_size.y * sizeof(uint32_t));
 
 	struct matrix_4x4 perspective_mat = mat44_get_perspective_lh_fov(DEG_TO_RAD(59.0f), (float)rendertarget_size.x / (float)rendertarget_size.y, 1.0f, 1000.0f);
 
 	uint32_t frame_time_mus = 0;
 	uint64_t frame_start = get_time();
 
+	const int32_t tile_size = rasterizer_get_tile_size();
 #ifdef USE_THREADING
 	const unsigned int core_count = get_logical_core_count();
 	struct thread **threads = malloc(sizeof(struct thread *) * core_count);
 	struct thread_data *thread_data = malloc(sizeof(struct thread_data) * core_count);
 
+	unsigned int tile_count = (padded_size.x / tile_size) * (padded_size.y / tile_size);
 	/* Not a good way to do this.
 	 * Should try to pass only the relevant vertex info to the thread.
+	 * Just passing every tri to all raster areas is really bad when using small raster areas (tiling enabled).
 	 * In case a tri is covering multiple raster areas should be ok to pass it to all of them.
 	 * Would be relatively easy if I had the verts in some data structure suitable for occlusion culling. */
 	for (unsigned int i = 0; i < core_count; ++i)
 	{
 		threads[i] = thread_create(i);
-		thread_data_init(&thread_data[i], 5);
+		thread_data_init(&thread_data[i], 5, tile_count / core_count + 1);
 		thread_data[i].render_target = render_target;
 		thread_data[i].depth_buffer = depth_buf;
 		thread_data[i].target_size = rendertarget_size;
@@ -191,8 +208,16 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		
 		if (rasterizer_uses_simd())
 		{
-			for (int i = 0; i < rendertarget_size.x * rendertarget_size.y; ++i)
-				((int*)render_target)[i] = 0xFF0000;
+			if (rasterizer_uses_tiles())
+			{
+				for (int i = 0; i < padded_size.x * padded_size.y; ++i)
+					((int*)render_target)[i] = 0xFF0000;
+			}
+			else
+			{
+				for (int i = 0; i < rendertarget_size.x * rendertarget_size.y; ++i)
+					((int*)render_target)[i] = 0xFF0000;
+			}
 		}
 		else
 			renderer_clear_backbuffer(renderer_info, 0xFF0000);
@@ -221,8 +246,10 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 
 		transform_vertices(&(vert_buf_large[0]), &(final_vert_buf_large3[0]), sizeof(vert_buf_large) / sizeof(vert_buf_large[0]), &trans_mat_large3, &rot_mat, &camera_projection);
 
-
-		rasterizer_clear_depth_buffer(depth_buf, &rendertarget_size);
+		if (rasterizer_uses_tiles())
+			rasterizer_clear_depth_buffer(depth_buf, &padded_size);
+		else
+			rasterizer_clear_depth_buffer(depth_buf, &rendertarget_size);
 
 		uint64_t raster_duration = get_time();
 #ifdef USE_THREADING
@@ -248,17 +275,50 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		{
 			/* Deswizzle the backbuffer here */
 			uint32_t *bb = get_backbuffer(renderer_info);
-			for (int y = 0; y < rendertarget_size.y; y += 2)
+			if (rasterizer_uses_tiles())
 			{
-				int row = y * rendertarget_size.x;
-				for (int x = 0; x < rendertarget_size.x; x += 2)
+				for (int tile_y = 0; tile_y < padded_size.y; tile_y += tile_size)
 				{
-					int start = row + x;
-					int start_swizz = row + x * 2;
-					bb[start] = render_target[start_swizz];
-					bb[start+1] = render_target[start_swizz + 1];
-					bb[start+ rendertarget_size.x] = render_target[start_swizz + 2];
-					bb[start+ rendertarget_size.x+1] = render_target[start_swizz + 3];
+					for (int tile_x = 0; tile_x < padded_size.x; tile_x += tile_size)
+					{
+						const int tile_index = (padded_size.x / tile_size) * (tile_y / tile_size) + (tile_x / tile_size);
+						const int tile_start = tile_size * tile_size * tile_index;
+
+						for (int y = 0; y < tile_size && tile_y + y < rendertarget_size.y; y += 2)
+						{
+							int source_row = tile_start + tile_size * y;
+							int target_row = (tile_y + y) * rendertarget_size.x;
+							for (int x = 0; x < tile_size && tile_x + x < rendertarget_size.x; x += 2)
+							{
+								int start = target_row + tile_x + x;
+								int start_swizz = source_row + x * 2;
+
+								assert(start + rendertarget_size.x + 1 < rendertarget_size.x * rendertarget_size.y && "invalid target index");
+								assert(start_swizz + 3 < padded_size.x * padded_size.y && "invalid source index");
+
+								bb[start] = render_target[start_swizz];
+								bb[start + 1] = render_target[start_swizz + 1];
+								bb[start + rendertarget_size.x] = render_target[start_swizz + 2];
+								bb[start + rendertarget_size.x + 1] = render_target[start_swizz + 3];
+							}
+						}
+					}
+				}
+			}
+			else
+			{
+				for (int y = 0; y < rendertarget_size.y; y += 2)
+				{
+					int row = y * rendertarget_size.x;
+					for (int x = 0; x < rendertarget_size.x; x += 2)
+					{
+						int start = row + x;
+						int start_swizz = row + x * 2;
+						bb[start] = render_target[start_swizz];
+						bb[start+1] = render_target[start_swizz + 1];
+						bb[start+ rendertarget_size.x] = render_target[start_swizz + 2];
+						bb[start+ rendertarget_size.x+1] = render_target[start_swizz + 3];
+					}
 				}
 			}
 		}
@@ -549,11 +609,23 @@ void render_stat_line_mus(struct stats *stats, struct font *font, void *render_t
 }
 
 #ifdef USE_THREADING
-void thread_data_init(struct thread_data *data, const uint32_t buffer_count)
+void thread_data_init(struct thread_data *data, const uint32_t buffer_count, const uint32_t raster_area_count)
 {
 	assert(data && "thread_data_init: data is NULL");
 
 	data->buffer_count = buffer_count;
+	if (rasterizer_uses_tiles())
+	{
+		data->raster_area_mins = malloc(sizeof(struct vec2_int) * raster_area_count);
+		data->raster_area_maxs = malloc(sizeof(struct vec2_int) * raster_area_count);
+		data->raster_area_count = raster_area_count;
+	}
+	else
+	{
+		data->raster_area_mins = malloc(sizeof(struct vec2_int));
+		data->raster_area_maxs = malloc(sizeof(struct vec2_int));
+		data->raster_area_count = 1;
+	}
 	data->vert_bufs = malloc(sizeof(struct vec4_float *) * buffer_count);
 	data->uv_bufs = malloc(sizeof(struct vec2_float *) * buffer_count);
 	data->ind_bufs = malloc(sizeof(unsigned int *) * buffer_count);
@@ -566,6 +638,8 @@ void thread_data_deinit(struct thread_data *data)
 {
 	assert(data && "thread_data_deinit: data is NULL");
 
+	free(data->raster_area_mins);
+	free(data->raster_area_maxs);
 	free(data->vert_bufs);
 	free(data->uv_bufs);
 	free(data->ind_bufs);
@@ -579,24 +653,57 @@ void thread_data_calculate_areas(struct thread_data *data, const unsigned int co
 	assert(data && "thread_data_calculate_areas: data is NULL");
 	assert(backbuffer_size && "thread_data_calculate_areas: backbuffer_size is NULL");
 
-	unsigned int columns = core_count / 2;
-	unsigned int width = backbuffer_size->x / columns;
-	unsigned int i;
-	for (i = 0; i < columns; ++i)
+	if (rasterizer_uses_tiles())
 	{
-		data[i].raster_area_min.x = i * width;
-		data[i].raster_area_max.x = i == columns - 1 ? backbuffer_size->x - 1 : i * width + width - 1;
-		data[i].raster_area_min.y = 0;
-		data[i].raster_area_max.y = backbuffer_size->y / 2;
-	}
+		/* Should have proper load balancing for threads.
+		 * For example a task manager which would give a new task to 
+		 * which ever thread got finished first until all tasks were completed.
+		 * Giving all threads tasks from all around the screen in an attempt for even some load balancing. */
+		int tile_size = rasterizer_get_tile_size();
+		struct vec2_int padded_size;
+		rasterizer_get_padded_size(backbuffer_size, &padded_size);
+		unsigned int current_core = 0;
+		int area_index = 0;
+		for (int y = 0; y < padded_size.y; y += tile_size)
+		{
+			for (int x = 0; x < padded_size.x; x += tile_size)
+			{
+				data[current_core].raster_area_mins[area_index].x = x;
+				data[current_core].raster_area_mins[area_index].y = y;
+				data[current_core].raster_area_maxs[area_index].x = x + tile_size - 1;
+				data[current_core].raster_area_maxs[area_index].y = y + tile_size - 1;
+				data[current_core].raster_area_count = area_index + 1;
 
-	columns = core_count - columns;
-	for (unsigned int j = 0; i < core_count; ++i, ++j)
+				++current_core;
+				if (current_core >= core_count)
+				{
+					current_core = 0;
+					++area_index;
+				}
+			}
+		}
+	}
+	else
 	{
-		data[i].raster_area_min.x = j * width;
-		data[i].raster_area_max.x = i == core_count - 1 ? backbuffer_size->x - 1 : j * width + width - 1;
-		data[i].raster_area_min.y = backbuffer_size->y / 2 + 1;
-		data[i].raster_area_max.y = backbuffer_size->y - 1;
+		unsigned int columns = core_count / 2;
+		unsigned int width = backbuffer_size->x / columns;
+		unsigned int i;
+		for (i = 0; i < columns; ++i)
+		{
+			data[i].raster_area_mins[0].x = i * width;
+			data[i].raster_area_maxs[0].x = i == columns - 1 ? backbuffer_size->x - 1 : i * width + width - 1;
+			data[i].raster_area_mins[0].y = 0;
+			data[i].raster_area_maxs[0].y = backbuffer_size->y / 2 - 1;
+		}
+
+		columns = core_count - columns;
+		for (unsigned int j = 0; i < core_count; ++i, ++j)
+		{
+			data[i].raster_area_mins[0].x = j * width;
+			data[i].raster_area_maxs[0].x = i == core_count - 1 ? backbuffer_size->x - 1 : j * width + width - 1;
+			data[i].raster_area_mins[0].y = backbuffer_size->y / 2;
+			data[i].raster_area_maxs[0].y = backbuffer_size->y - 1;
+		}
 	}
 }
 
@@ -605,11 +712,14 @@ void rasterize_thread(void *data)
 	assert(data && "rasterize_thread: data is NULL");
 
 	struct thread_data *td = (struct thread_data *)data;
-	for (unsigned int i = 0; i < td->buffer_count; ++i)
+	for (unsigned int area = 0; area < td->raster_area_count; ++area)
 	{
-		rasterizer_rasterize(td->render_target, td->depth_buffer, &td->target_size, &td->raster_area_min, &td->raster_area_max,
-			&td->vert_bufs[i][0], &td->uv_bufs[i][0], &td->ind_bufs[i][0], td->ind_counts[i],
-			td->textures[i], td->texture_sizes[i]);
+		for (unsigned int i = 0; i < td->buffer_count; ++i)
+		{
+			rasterizer_rasterize(td->render_target, td->depth_buffer, &td->target_size, &td->raster_area_mins[area], &td->raster_area_maxs[area],
+				&td->vert_bufs[i][0], &td->uv_bufs[i][0], &td->ind_bufs[i][0], td->ind_counts[i],
+				td->textures[i], td->texture_sizes[i]);
+		}
 	}
 }
 #endif
