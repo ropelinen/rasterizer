@@ -8,7 +8,15 @@
 /* Enables parallelization using SSE2.
  * Notably faster than the non-simd version so should be used if possible. 
  * Using simd is highly recommended if you are building a x86 version. */
-#define USE_SIMD
+#define USE_SIMD 1
+#ifdef USE_SIMD
+/* Uses TILE_SIZE*TILE_SIZE blocks for render target and depth buffer to reduce cache misses.
+ * As raster areas must be aligned to tiles and be tile sized 
+ * rastering takes a notable hit from per triangle setup and clipping,
+ * unless tris are properly binned to the raster areas. */
+//#define USE_TILES 1
+#endif
+#define TILE_SIZE 64
 
 #ifdef USE_SIMD
 #include <emmintrin.h>
@@ -363,13 +371,21 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 	assert(SUB_BITS == 4 && "rasterizer_rasterize: SUB_BITS has changed, check the assert below.");
 	assert(target_size->x <= (2 * -(GB_MIN)) && target_size->y <= (2 * -(GB_MIN)) && "rasterizer_rasterize: render target is too large");
 	assert(rasterize_area_min->x >= 0 && rasterize_area_min->y >= 0 && "rasterizer_rasterize: invalid rasterize_area_min");
+#ifndef USE_TILES
 	assert(rasterize_area_max->x < target_size->x && rasterize_area_max->y < target_size->y && "rasterizer_rasterize: invalid rasterize_are_max");
+#endif
 	assert(rasterize_area_min->x < rasterize_area_max->x && rasterize_area_min->y < rasterize_area_max->y && "rasterizer_rasterize: rasterize_area_min must be smaller than rasterize_area_max");
 #ifdef USE_SIMD
 	assert(rasterize_area_min->x % 2 == 0 && "rasterizer_rasterize: rasterize_area_min must be even");
 	assert(rasterize_area_min->y % 2 == 0 && "rasterizer_rasterize: rasterize_area_min must be even");
 	assert(rasterize_area_max->x % 2 == 1 && "rasterizer_rasterize: rasterize_area_max must be odd");
 	assert(rasterize_area_max->y % 2 == 1 && "rasterizer_rasterize: rasterize_area_max must be odd");
+#ifdef USE_TILES
+	assert(rasterize_area_min->x % TILE_SIZE == 0 && "rasterizer_rasterize: When using tiles rasterize areas must be aligned to tiles.");
+	assert(rasterize_area_min->y % TILE_SIZE == 0 && "rasterizer_rasterize: When using tiles rasterize areas must be aligned to tiles.");
+	assert(rasterize_area_max->x - rasterize_area_min->x == TILE_SIZE - 1 && "rasterizer_rasterize: When using tiles rasterize areas must be tile sized.");
+	assert(rasterize_area_max->y - rasterize_area_min->y == TILE_SIZE - 1 && "rasterizer_rasterize: When using tiles rasterize areas must be tile sized.");
+#endif
 #endif
 
 	/* Sub-pixel constants */
@@ -447,13 +463,13 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 #ifdef USE_SIMD
 			min.x = ((max(min.x, rast_min.x) & ~sub_mask) & ~sub_multip) + half_pixel;
 			min.y = ((max(min.y, rast_min.y) & ~sub_mask) & ~sub_multip) + half_pixel;
-			max.x = (((min(max.x, rast_max.x) + sub_mask) & ~sub_mask) | sub_multip) + half_pixel;
-			max.y = (((min(max.y, rast_max.y) + sub_mask) & ~sub_mask) | sub_multip) + half_pixel;
+			max.x = ((min(max.x, rast_max.x) & ~sub_mask) | sub_multip) + half_pixel;
+			max.y = ((min(max.y, rast_max.y) & ~sub_mask) | sub_multip) + half_pixel;
 #else
 			min.x = (max(min.x, rast_min.x) & ~sub_mask) + half_pixel;
 			min.y = (max(min.y, rast_min.y) & ~sub_mask) + half_pixel;
-			max.x = ((min(max.x, rast_max.x) + sub_mask) & ~sub_mask) + half_pixel;
-			max.y = ((min(max.y, rast_max.y) + sub_mask) & ~sub_mask) + half_pixel;
+			max.x = (min(max.x, rast_max.x) & ~sub_mask) + half_pixel;
+			max.y = (min(max.y, rast_max.y) & ~sub_mask) + half_pixel;
 #endif
 
 			/* Orient at min point
@@ -499,9 +515,23 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 			temp = (float)(texture_size->y - 1);
 			const __m128 tex_coor_y_max = _mm_set_ps(temp, temp, temp, temp);
 
+#ifdef USE_TILES
+			unsigned int pixel_index_row;
+			{
+				struct vec2_int padded_size;
+				rasterizer_get_padded_size(target_size, &padded_size);
+				pixel_index_row = TILE_SIZE * TILE_SIZE * 
+					((padded_size.x / TILE_SIZE) * (rasterize_area_min->y / TILE_SIZE) + (rasterize_area_min->x / TILE_SIZE)); /* tile index */
+				pixel_index_row += TILE_SIZE 
+					* ((((min.y - half_pixel) / sub_multip) + half_height) - rasterize_area_min->y) /* y */
+					+ (((((min.x - half_pixel) / sub_multip) + half_width) - rasterize_area_min->x) * 2); /* x */
+
+			}
+#else
 			unsigned int pixel_index_row = target_size->x
 				* (((min.y - half_pixel) / sub_multip) + half_height) /* y */
 				+ ((((min.x - half_pixel) / sub_multip) + half_width) * 2); /* x */
+#endif
 
 			const __m128i step_size = _mm_set_epi32(2 * sub_multip, 2 * sub_multip, 2 * sub_multip, 2 * sub_multip);
 			const __m128i xor_mask = _mm_set_epi32(~(uint32_t)0, ~(uint32_t)0, ~(uint32_t)0, ~(uint32_t)0);
@@ -576,8 +606,15 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 							{
 								if (((int32_t *)&mask)[pixel] == 0)
 									continue;
-
+#ifdef USE_TILES
+#if RPLNN_BUILD_TYPE == RPLNN_DEBUG
+								struct vec2_int padded_size;
+								rasterizer_get_padded_size(target_size, &padded_size);
+								assert(pixel_index_start + pixel < (unsigned)(padded_size.x * padded_size.y) && "rasterizer_rasterize: invalid pixel_index");
+#endif
+#else
 								assert(pixel_index_start + pixel < (unsigned)(target_size->x * target_size->y) && "rasterizer_rasterize: invalid pixel_index");
+#endif
 								assert(((uint32_t *)&texture_index)[pixel] < (unsigned)(texture_size->x * texture_size->y) && "rasterizer_rasterize: invalid texture_index");
 
 								/* There must be a better way to do this */
@@ -596,15 +633,17 @@ void rasterizer_rasterize(uint32_t *render_target, uint32_t *depth_buf, const st
 					double_step = step_x_01 * 2;
 					w2 = _mm_add_epi32(w2, _mm_set_epi32(double_step, double_step, double_step, double_step));
 
-					/* This was really costly operation, like +15% (x86), +9% (x64) */
 					pixel_index_start += 4;
 				}
 
 				w0_row += step_y_12 * 2;
 				w1_row += step_y_20 * 2;
 				w2_row += step_y_01 * 2;
-
+#ifdef USE_TILES
+				pixel_index_row += TILE_SIZE * 2;
+#else
 				pixel_index_row += target_size->x * 2;
+#endif
 			}
 #else
 			struct vec2_float uv0;
@@ -698,5 +737,34 @@ bool rasterizer_uses_simd(void)
 	return true;
 #else
 	return false;
+#endif
+}
+
+bool rasterizer_uses_tiles(void)
+{
+#ifdef USE_TILES
+	return true;
+#else
+	return false;
+#endif
+}
+
+uint32_t rasterizer_get_tile_size(void)
+{
+	return TILE_SIZE;
+}
+
+void rasterizer_get_padded_size(const struct vec2_int *target_size, struct vec2_int *out_padded_size)
+{
+	assert(target_size && "rasterizer_get_padded_size: target_size is NULL");
+	assert(out_padded_size && "rasterizer_get_padded_size: out_padded_size is NULL");
+
+	out_padded_size->x = target_size->x;
+	out_padded_size->y = target_size->y;
+#ifdef USE_TILES
+	if ((target_size->x % TILE_SIZE) != 0)
+		out_padded_size->x += TILE_SIZE - (target_size->x % TILE_SIZE);
+	if ((target_size->y % TILE_SIZE) != 0)
+		out_padded_size->y += TILE_SIZE - (target_size->y % TILE_SIZE);
 #endif
 }
