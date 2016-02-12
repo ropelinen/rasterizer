@@ -15,6 +15,35 @@
 #define RGB_BLUE 255
 #define RGB_RED 255 << 16
 
+/* Missing C99 features before VS2015 */
+#if defined(_MSC_VER) && _MSC_VER < 1900
+/* Taken from http://stackoverflow.com/questions/2915672/snprintf-and-visual-studio-2010 */
+#define snprintf c99_snprintf
+#define vsnprintf c99_vsnprintf
+int c99_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap)
+{
+	int count = -1;
+
+	if (size != 0)
+		count = _vsnprintf_s(outBuf, size, _TRUNCATE, format, ap);
+	if (count == -1)
+		count = _vscprintf(format, ap);
+
+	return count;
+}
+int c99_snprintf(char *outBuf, size_t size, const char *format, ...)
+{
+	int count;
+	va_list ap;
+
+	va_start(ap, format);
+	count = c99_vsnprintf(outBuf, size, format, ap);
+	va_end(ap);
+
+	return count;
+}
+#endif
+
 struct renderer_info
 {
 #if RPLNN_RENDERER == RPLNN_RENDERER_GDI
@@ -274,6 +303,8 @@ bool float_to_string(const float value, char *buffer, const size_t buffer_size)
 	return snprintf(buffer, buffer_size, "%.3f", value) < (int)buffer_size;
 }
 
+#pragma warning(push)
+#pragma warning(disable: 4127) /* conditional expression is constant */
 DWORD WINAPI thread_func(LPVOID lpParam)
 {
 	struct thread *me = (struct thread *)lpParam;
@@ -319,6 +350,7 @@ DWORD WINAPI thread_func(LPVOID lpParam)
 
 	return 0;
 }
+#pragma warning(pop)
 
 struct thread *thread_create(const int core_id)
 {
