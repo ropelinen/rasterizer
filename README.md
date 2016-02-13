@@ -4,6 +4,7 @@
 - Functions do not check for NULL pointers, it is the responsibility of the caller (there are asserts for that though)
 - Contains a visual studio project which has been tested on VS2013 and VS2015
 - VS2012 is not supported as the project uses C99 (mainly mixed code and variables)
+- Use Production build configuraion, it's the most optimized one
 
 ## Features
 - Depth buffer
