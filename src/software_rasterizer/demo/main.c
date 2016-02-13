@@ -109,8 +109,8 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	translation.x += 10.0f; translation.y += 18.0f; translation.z += 50.0f;
 	struct matrix_3x4 trans_mat_large3 = mat34_get_translation(&translation);
 
+	/* Get correctly sized render target */
 	struct vec2_int rendertarget_size = get_backbuffer_size(renderer_info);
-	
 	uint32_t *render_target = NULL;
 	struct vec2_int padded_size = { .x = 0, .y = 0 };
 	if (rasterizer_uses_simd())
@@ -129,6 +129,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 	if (!render_target)
 		error_popup("Couldn't get back buffer", true);
 
+	/* Get correctly sized depth buffer */
 	uint32_t *depth_buf = NULL;
 	if (rasterizer_uses_simd() && rasterizer_uses_tiles())
 		depth_buf = malloc(padded_size.x * padded_size.y * sizeof(uint32_t));
@@ -196,8 +197,6 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		thread_data[i].texture_sizes[4] = texture_size;
 	}
 
-	/* Might want to use fixed sized raster areas instead (32x32 or 64x64 should be ok).
-	 * With those it would be possible to have render target tiled to that pixel size with 2x2 blocks in those. */
 	thread_data_calculate_areas(thread_data, core_count, &rendertarget_size);
 #endif
 
@@ -343,6 +342,7 @@ void main(struct api_info *api_info, struct renderer_info *renderer_info)
 		frame_start = frame_end;
 	}
 
+	/* Free resources */
 #ifdef USE_THREADING
 	for (unsigned int i = 0; i < core_count; ++i)
 	{
