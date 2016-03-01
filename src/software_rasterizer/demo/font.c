@@ -131,6 +131,8 @@ void font_render_text(void *render_target, const struct vec2_int *target_size, s
 			}
 		}
 
+		free(bitmap);
+
 		/* Advance character width */
 		int advance_x;
 		stbtt_GetCodepointHMetrics(font_info, text[i], &advance_x, 0);
